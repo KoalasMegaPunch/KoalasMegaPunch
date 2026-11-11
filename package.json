@@ -1,0 +1,10 @@
+{
+  "name": "class-student-app",
+  "private": true,
+  "description": "학생용 클래스 앱 (Google Apps Script)",
+  "scripts": {
+    "test": "node dev/test-api.js",
+    "preview": "node dev/server.js",
+    "e2e": "node dev/e2e.js"
+  }
+}

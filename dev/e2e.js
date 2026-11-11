@@ -1,0 +1,116 @@
+// End-to-end UI walkthrough on a phone viewport.  Run: node dev/e2e.js [screenshotDir]
+const { chromium, devices } = require('playwright');
+const path = require('path');
+const fs = require('fs');
+const { startServer } = require('./server');
+
+(async () => {
+  const outDir = process.argv[2] || path.join(__dirname, 'screens');
+  fs.mkdirSync(outDir, { recursive: true });
+  const { server, g } = await startServer(8799);
+  const adminPw = g.settings_().adminPassword;
+  const URL = 'http://localhost:8799/';
+
+  // Seed some lesson content as the teacher.
+  const admin = g.api('adminLogin', null, { password: adminPw }).token;
+  const subs = g.api('bootstrap', admin).subjects;
+  g.api('lessonSave', admin, {
+    subjectId: subs[0].id, week: new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10), title: '11/10(월) 3강 — 뉴턴의 운동 법칙',
+    content: '1. 관성의 법칙\n2. 가속도의 법칙 F = ma\n3. 작용·반작용\n\n판서 자료: https://example.com/notes.pdf',
+    videos: '3강 개념 정리 | https://youtu.be/abc123\n3강 문제풀이 | https://youtu.be/def456',
+    homework: '교재 p.32~35 전 문항\n오답노트 3문제 이상',
+  });
+
+  const browser = await chromium.launch();
+  const errors = [];
+  const shot = async (page, name) => page.screenshot({ path: path.join(outDir, name + '.png') });
+  const ctx = await browser.newContext({ ...devices['iPhone 13'] });
+  const page = await ctx.newPage();
+  page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+  page.on('console', m => { if (m.type() === 'error' && !/pretendard|net::ERR/i.test(m.text())) errors.push('console: ' + m.text()); });
+
+  // --- Student: signup
+  await page.goto(URL);
+  await page.getByRole('button', { name: '처음이에요 (가입)' }).click();
+  await shot(page, '01-signup');
+  await page.getByPlaceholder('예: 뉴턴짱').fill('뉴턴짱');
+  await page.getByPlaceholder('실명').fill('홍길동');
+  await page.getByPlaceholder('010-1234-5678').fill('01012345678');
+  await page.getByPlaceholder('4자 이상').fill('abcd');
+  await page.getByPlaceholder('한 번 더').fill('abcd');
+  await page.getByRole('button', { name: '가입하기' }).click();
+  await page.getByText('3강 개념 정리').waitFor();
+  await shot(page, '02-lessons');
+
+  // --- Booking
+  await page.locator('nav [data-tab=booking]').click();
+  await page.locator('.slot.free').first().waitFor();
+  await shot(page, '03-booking');
+  await page.locator('.slot.free').nth(1).click();
+  await page.getByPlaceholder('예: 3단원 문제풀이 질문 (선택)').fill('운동량 보존 질문');
+  await page.getByRole('button', { name: '신청하기' }).click();
+  await page.locator('.slot.mine').first().waitFor();
+  await shot(page, '04-booked');
+
+  // --- Q&A
+  await page.locator('nav [data-tab=qna]').click();
+  await page.getByRole('button', { name: '✏️ 질문하기' }).click();
+  await page.getByPlaceholder('한 줄 요약').fill('관성이 정확히 뭔가요?');
+  await page.locator('.sheet textarea').fill('버스가 출발할 때 몸이 뒤로 쏠리는 게 관성인가요?');
+  await shot(page, '05-ask');
+  await page.getByRole('button', { name: '익명으로 올리기' }).click();
+  await page.locator('.card.q').first().waitFor();
+  await shot(page, '06-board');
+
+  // --- Me
+  await page.locator('nav [data-tab=me]').click();
+  await page.getByText('다가오는 보충수업').waitFor();
+  await shot(page, '07-me');
+  await page.getByRole('button', { name: '로그아웃' }).click();
+
+  // --- Teacher
+  await page.getByRole('button', { name: '선생님 로그인' }).click();
+  await page.getByPlaceholder('[설정] 시트의 선생님 비밀번호').fill(adminPw);
+  await page.getByRole('button', { name: '선생님으로 로그인' }).click();
+  await page.locator('nav [data-tab=qna] .dot').waitFor();
+  await page.locator('nav [data-tab=qna]').click();
+  await page.locator('.card.q h3').first().click();
+  await page.getByPlaceholder('답변을 입력하세요').fill('맞아요! 정지해 있던 몸이 계속 정지 상태를 유지하려는 성질이 관성이에요.');
+  await page.getByRole('button', { name: '답변 등록' }).click();
+  await page.waitForTimeout(400);
+  await page.locator('.card.q h3').first().click();
+  await page.getByRole('button', { name: 'FAQ로 등록' }).click();
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: '자주 묻는 질문' }).click();
+  await page.locator('details.faq-item').first().waitFor();
+  await page.locator('details.faq-item summary').first().click();
+  await shot(page, '08-teacher-faq');
+
+  await page.locator('nav [data-tab=booking]').click();
+  await page.locator('.slot.admin-has').first().waitFor();
+  await shot(page, '09-teacher-booking');
+
+  await page.locator('nav [data-tab=admin]').click();
+  await page.getByText('총 1명').waitFor();
+  await page.locator('.list-row .icon-btn[title="이름 바꾸기"]').first().click();
+  await page.locator('.sheet input').fill('겨울특강 물리학 개념반(월금)');
+  await page.getByRole('button', { name: '저장' }).click();
+  await page.getByText('겨울특강 물리학 개념반(월금)').waitFor();
+  await shot(page, '10-teacher-admin');
+
+  // --- Student sees teacher's answer
+  await page.getByRole('button', { name: '로그아웃' }).click();
+  await page.getByPlaceholder('비밀번호').fill('abcd');
+  await page.locator('form button[type=submit]').click();
+  await page.locator('nav [data-tab=qna]').click();
+  await page.locator('.card.q h3').first().click();
+  await page.getByText('선생님 답변').waitFor();
+  await shot(page, '11-student-answer');
+
+  const timetable = g.ss.getSheetByName('보충시간표').data.map(r => r.join(' | ')).join('\n');
+  console.log('--- 보충시간표 sheet ---\n' + timetable);
+  await browser.close();
+  server.close();
+  if (errors.length) { console.log('ERRORS:\n' + errors.join('\n')); process.exit(1); }
+  console.log('E2E OK, screenshots in ' + outDir);
+})().catch(e => { console.error(e); process.exit(1); });

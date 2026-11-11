@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+:root {
+  --bg: #f4f5fb;
+  --card: #ffffff;
+  --text: #1c1f2b;
+  --muted: #6b7083;
+  --line: #e5e7f0;
+  --primary: #4f46e5;
+  --primary-soft: #eef0ff;
+  --primary-text: #ffffff;
+  --ok: #059669;
+  --ok-soft: #e6f7f0;
+  --warn: #c2410c;
+  --warn-soft: #fff1e6;
+  --danger: #dc2626;
+  --mine: #0e7490;
+  --mine-soft: #e0f5f9;
+  --shadow: 0 1px 2px rgba(20, 24, 50, .06), 0 4px 16px rgba(20, 24, 50, .05);
+  --radius: 16px;
+  --nav-h: 64px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12131a;
+    --card: #1c1e28;
+    --text: #eceef6;
+    --muted: #9a9fb4;
+    --line: #2c2f3d;
+    --primary: #8b85ff;
+    --primary-soft: #26254a;
+    --primary-text: #12131a;
+    --ok: #34d399;
+    --ok-soft: #12302a;
+    --warn: #fb923c;
+    --warn-soft: #3a2616;
+    --danger: #f87171;
+    --mine: #22d3ee;
+    --mine-soft: #0f2f37;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+body {
+  font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  font-size: 15px; line-height: 1.55; word-break: keep-all; overflow-wrap: anywhere;
+}
+button, input, textarea, select { font: inherit; color: inherit; }
+a { color: var(--primary); }
+.hidden { display: none !important; }
+
+/* ---------- layout ---------- */
+#app { max-width: 640px; margin: 0 auto; min-height: 100vh; }
+.topbar {
+  position: sticky; top: 0; z-index: 10; background: var(--bg);
+  padding: calc(env(safe-area-inset-top) + 14px) 16px 10px;
+  display: flex; align-items: center; gap: 10px;
+}
+.topbar h1 { font-size: 19px; margin: 0; flex: 1; letter-spacing: -.3px; }
+.who { font-size: 13px; color: var(--muted); background: var(--card); border: 1px solid var(--line); padding: 4px 10px; border-radius: 999px; }
+.who.admin { color: var(--primary); border-color: var(--primary); }
+main { padding: 4px 16px calc(var(--nav-h) + env(safe-area-inset-bottom) + 24px); }
+.nav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  background: var(--card); border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.nav-inner { max-width: 640px; margin: 0 auto; display: flex; height: var(--nav-h); }
+.nav button {
+  flex: 1; border: 0; background: none; cursor: pointer; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  font-size: 12px; font-weight: 600; position: relative;
+}
+.nav button svg { width: 24px; height: 24px; }
+.nav button.on { color: var(--primary); }
+.nav .dot {
+  position: absolute; top: 8px; left: calc(50% + 8px); min-width: 18px; height: 18px; padding: 0 5px;
+  background: var(--danger); color: #fff; font-size: 11px; border-radius: 9px; line-height: 18px;
+}
+
+/* ---------- common ---------- */
+.card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--line); padding: 16px; margin-bottom: 12px; }
+.card h3 { margin: 0 0 6px; font-size: 16px; }
+.section-title { font-size: 13px; font-weight: 700; color: var(--muted); margin: 18px 4px 8px; display: flex; align-items: center; gap: 8px; }
+.section-title .grow { flex: 1; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.pre { white-space: pre-wrap; }
+.row { display: flex; align-items: center; gap: 8px; }
+.row.wrap { flex-wrap: wrap; }
+.grow { flex: 1; min-width: 0; }
+.btn {
+  border: 0; border-radius: 12px; padding: 12px 16px; font-weight: 700; cursor: pointer;
+  background: var(--primary); color: var(--primary-text); display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 44px;
+}
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.block { width: 100%; }
+.btn.ghost { background: var(--primary-soft); color: var(--primary); }
+.btn.line { background: transparent; border: 1px solid var(--line); color: var(--text); }
+.btn.danger { background: transparent; border: 1px solid var(--line); color: var(--danger); }
+.btn.sm { padding: 6px 12px; min-height: 34px; font-size: 13px; border-radius: 10px; }
+.link-btn { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 13px; padding: 8px; }
+.badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.badge.ok { background: var(--ok-soft); color: var(--ok); }
+.badge.wait { background: var(--warn-soft); color: var(--warn); }
+.badge.mine { background: var(--mine-soft); color: var(--mine); }
+.badge.pri { background: var(--primary-soft); color: var(--primary); }
+.empty { text-align: center; color: var(--muted); padding: 36px 16px; }
+.empty .big { font-size: 34px; margin-bottom: 6px; }
+.notice { background: var(--primary-soft); color: var(--text); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; display: flex; gap: 10px; }
+.notice b { color: var(--primary); }
+
+/* chips */
+.chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: none; margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex: none; border: 1px solid var(--line); background: var(--card); color: var(--text);
+  border-radius: 999px; padding: 8px 14px; font-weight: 600; font-size: 14px; cursor: pointer; white-space: nowrap;
+}
+.chip.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.seg { display: flex; background: var(--line); border-radius: 12px; padding: 3px; margin-bottom: 12px; }
+.seg button { flex: 1; border: 0; background: none; padding: 9px 4px; border-radius: 10px; font-weight: 700; color: var(--muted); cursor: pointer; }
+.seg button.on { background: var(--card); color: var(--text); box-shadow: var(--shadow); }
+
+/* forms */
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.field .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.input, textarea.input, select.input {
+  width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 12px;
+  padding: 12px 14px; font-size: 16px; outline: none;
+}
+.input:focus { border-color: var(--primary); }
+textarea.input { min-height: 110px; resize: vertical; }
+.lock-note { display: flex; gap: 8px; font-size: 12.5px; color: var(--muted); background: var(--bg); border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; }
+
+/* auth */
+.auth { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 24px 20px calc(env(safe-area-inset-bottom) + 24px); max-width: 440px; margin: 0 auto; }
+.auth .logo { width: 56px; height: 56px; border-radius: 16px; background: var(--primary); color: var(--primary-text); display: grid; place-items: center; font-size: 28px; margin-bottom: 14px; }
+.auth h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.5px; }
+.auth .sub { color: var(--muted); margin: 0 0 22px; }
+
+/* lessons */
+.week-select { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.week-select select { flex: 1; }
+.lesson h3 { font-size: 17px; }
+.lesson .block { margin-top: 14px; }
+.lesson .block-title { font-size: 12.5px; font-weight: 800; color: var(--muted); margin-bottom: 6px; letter-spacing: .3px; }
+.lesson .hw { background: var(--warn-soft); border-radius: 12px; padding: 12px 14px; }
+.lesson .hw .block-title { color: var(--warn); }
+.video {
+  display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text);
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: var(--bg);
+}
+.video .play { width: 36px; height: 36px; border-radius: 50%; background: var(--danger); color: #fff; display: grid; place-items: center; flex: none; }
+.video .t { font-weight: 700; }
+.video .u { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.admin-bar { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+
+/* booking */
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12.5px; color: var(--muted); margin: 6px 4px 12px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 4px; margin-right: 4px; vertical-align: -1px; }
+.day h3 { display: flex; align-items: baseline; gap: 8px; }
+.slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 10px; }
+.slot {
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 6px; text-align: center; cursor: pointer;
+  background: var(--card); min-height: 62px; display: flex; flex-direction: column; justify-content: center; gap: 2px;
+}
+.slot .h { font-weight: 800; font-size: 15px; }
+.slot .s { font-size: 11.5px; color: var(--muted); }
+.slot.free { border-color: var(--primary); background: var(--primary-soft); }
+.slot.free .s { color: var(--primary); font-weight: 700; }
+.slot.mine { border-color: var(--mine); background: var(--mine-soft); }
+.slot.mine .s { color: var(--mine); font-weight: 800; }
+.slot.full, .slot.past { background: var(--bg); color: var(--muted); cursor: default; }
+.slot.past .h { text-decoration: line-through; }
+.slot.admin-has { border-color: var(--primary); background: var(--primary-soft); cursor: pointer; }
+.slot .names { font-size: 11.5px; font-weight: 700; color: var(--primary); }
+
+/* qna */
+.q { cursor: pointer; }
+.q .meta { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+.q .meta .date { margin-left: auto; font-size: 12px; color: var(--muted); }
+.q h3 { font-size: 15.5px; margin: 0; }
+.q .body { margin-top: 10px; }
+.answer { margin-top: 12px; background: var(--primary-soft); border-radius: 12px; padding: 12px 14px; }
+.answer .who-a { font-size: 12.5px; font-weight: 800; color: var(--primary); margin-bottom: 4px; }
+.faq-item summary { list-style: none; cursor: pointer; display: flex; gap: 10px; font-weight: 700; }
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary .qmark { color: var(--primary); font-weight: 900; }
+.faq-item .a { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); display: flex; gap: 10px; }
+.faq-item .a .amark { color: var(--ok); font-weight: 900; }
+.fab {
+  position: fixed; right: max(16px, calc(50% - 304px)); bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px); z-index: 15;
+  border-radius: 999px; padding: 14px 20px; box-shadow: 0 6px 20px rgba(79, 70, 229, .35);
+}
+
+/* list rows (admin) */
+.list-row { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.list-row:last-child { border-bottom: 0; }
+.icon-btn { border: 1px solid var(--line); background: var(--card); border-radius: 10px; width: 34px; height: 34px; display: grid; place-items: center; cursor: pointer; flex: none; color: var(--text); }
+.icon-btn:disabled { opacity: .35; }
+.kv { display: grid; grid-template-columns: 84px 1fr; gap: 6px 10px; }
+.kv dt { color: var(--muted); font-size: 13.5px; }
+.kv dd { margin: 0; font-weight: 600; }
+
+/* sheet (modal) */
+.backdrop { position: fixed; inset: 0; background: rgba(10, 12, 25, .45); z-index: 50; display: flex; align-items: flex-end; justify-content: center; animation: fade .15s; }
+.sheet {
+  background: var(--card); width: 100%; max-width: 640px; max-height: 92vh; overflow-y: auto;
+  border-radius: 20px 20px 0 0; padding: 8px 18px calc(env(safe-area-inset-bottom) + 18px); animation: up .2s ease-out;
+}
+.sheet .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 4px auto 12px; }
+.sheet h2 { font-size: 18px; margin: 0 0 14px; }
+.sheet .actions { display: flex; gap: 8px; margin-top: 6px; }
+.sheet .actions .btn { flex: 1; }
+@keyframes up { from { transform: translateY(40px); opacity: .5; } to { transform: none; opacity: 1; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* toast & loader */
+#toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 14px); transform: translateX(-50%); z-index: 100; pointer-events: none; }
+#toast div { background: #1c1f2b; color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.25); animation: up .2s; max-width: 86vw; text-align: center; }
+#toast div.err { background: var(--danger); color: #fff; }
+.spinner { width: 28px; height: 28px; border: 3px solid var(--line); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; margin: 40px auto; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="app"><div class="spinner"></div></div>
+<div id="toast"></div>
+
+<script>
+/* =========================================================
+ * 서버 호출
+ * ======================================================= */
+const STORE_KEY = 'classapp.v1';
+const S = { token: null, me: null, subjects: [], subjectId: null, tab: 'lessons', appName: '', notice: '', qnaMode: 'board', qFilter: 'all', unanswered: 0, sheetUrl: '' };
+
+function loadStore() { try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch (e) { return {}; } }
+function saveStore(patch) { try { localStorage.setItem(STORE_KEY, JSON.stringify(Object.assign(loadStore(), patch))); } catch (e) {} }
+
+function call(action, payload) {
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(err => {
+        const msg = String((err && err.message) || err || '오류가 났어요.').replace(/^(Error|Exception|ScriptError):\s*/i, '');
+        if (msg.indexOf('AUTH_REQUIRED') >= 0) { logout(true); reject(new Error('다시 로그인해 주세요.')); return; }
+        reject(new Error(msg));
+      })
+      .api(action, S.token, payload || {});
+  });
+}
+
+/* =========================================================
+ * DOM 도우미
+ * ======================================================= */
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  if (props) {
+    for (const k in props) {
+      const v = props[k];
+      if (v === null || v === undefined || v === false) continue;
+      if (k === 'class') e.className = v;
+      else if (k === 'style') e.style.cssText = v;
+      else if (k === 'value') e.value = v;
+      else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? '' : v);
+    }
+  }
+  append(e, kids);
+  return e;
+}
+function append(parent, kids) {
+  [].concat(kids).flat(Infinity).forEach(k => {
+    if (k === null || k === undefined || k === false) return;
+    parent.append(k.nodeType ? k : document.createTextNode(String(k)));
+  });
+  return parent;
+}
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); return node; }
+function $(sel) { return document.querySelector(sel); }
+
+/** 텍스트 속 URL 을 안전하게 링크로 바꿔 줍니다. */
+function richText(text, cls) {
+  const box = el('div', { class: 'pre ' + (cls || '') });
+  const re = /(https?:\/\/[^\s<>"']+)/g;
+  let last = 0, m;
+  const s = String(text || '');
+  while ((m = re.exec(s))) {
+    box.append(document.createTextNode(s.slice(last, m.index)));
+    box.append(el('a', { href: m[1], target: '_blank', rel: 'noopener' }, m[1]));
+    last = m.index + m[1].length;
+  }
+  box.append(document.createTextNode(s.slice(last)));
+  return box;
+}
+
+const ICONS = {
+  book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5z"/><path d="M4 19a2 2 0 0 1 2-2h13"/>',
+  cal: '<rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/>',
+  chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  play: '<path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/>',
+  up: '<path d="M6 15l6-6 6 6"/>',
+  down: '<path d="M6 9l6 6 6-6"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+};
+function icon(name, size) {
+  const span = document.createElement('span');
+  span.style.display = 'inline-flex';
+  span.innerHTML = '<svg viewBox="0 0 24 24" width="' + (size || 24) + '" height="' + (size || 24) + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICONS[name] + '</svg>';
+  return span;
+}
+
+let toastTimer;
+function toast(msg, isErr) {
+  const t = clear($('#toast'));
+  t.append(el('div', { class: isErr ? 'err' : '' }, msg));
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => clear(t), isErr ? 3800 : 2200);
+}
+
+/** 버튼을 누르는 동안 비활성화하고 오류는 토스트로 보여줍니다. */
+async function busy(btn, fn) {
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '처리 중…'; }
+  try { return await fn(); }
+  catch (e) { toast(e.message, true); throw e; }
+  finally { if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
+}
+
+function openSheet(title, body, actions) {
+  const back = el('div', { class: 'backdrop' });
+  const sheet = el('div', { class: 'sheet' }, el('div', { class: 'grab' }), el('h2', null, title), body);
+  if (actions && actions.length) sheet.append(el('div', { class: 'actions' }, actions));
+  back.append(sheet);
+  const close = () => back.remove();
+  back.addEventListener('click', e => { if (e.target === back) close(); });
+  document.body.append(back);
+  const first = sheet.querySelector('input, textarea');
+  if (first && window.innerWidth > 700) first.focus();
+  return close;
+}
+
+function confirmSheet(title, message, okLabel, danger) {
+  return new Promise(resolve => {
+    let close;
+    const ok = el('button', { class: 'btn' + (danger ? ' danger' : ''), onclick: () => { close(); resolve(true); } }, okLabel || '확인');
+    const cancel = el('button', { class: 'btn line', onclick: () => { close(); resolve(false); } }, '취소');
+    close = openSheet(title, message ? el('p', { class: 'muted pre', style: 'margin-top:0' }, message) : null, [cancel, ok]);
+  });
+}
+
+function field(label, input, hint) {
+  return el('div', { class: 'field' }, el('label', null, label), input, hint ? el('div', { class: 'hint' }, hint) : null);
+}
+function input(props) { return el('input', Object.assign({ class: 'input' }, props)); }
+function textarea(props) { return el('textarea', Object.assign({ class: 'input' }, props)); }
+
+function emptyState(emoji, text) { return el('div', { class: 'empty' }, el('div', { class: 'big' }, emoji), text); }
+function loader() { return el('div', { class: 'spinner' }); }
+function shortDate(s) { return s ? String(s).slice(5, 16).replace('-', '/') : ''; }
+function todayYmd() {
+  const d = new Date(Date.now() + 9 * 3600e3);
+  return d.toISOString().slice(0, 10);
+}
+
+/* =========================================================
+ * 시작 / 로그인
+ * ======================================================= */
+async function start() {
+  const st = loadStore();
+  S.token = st.token || null;
+  S.subjectId = st.subjectId || null;
+  if (!S.token) return renderAuth();
+  try {
+    await bootstrap();
+    renderMain();
+  } catch (e) {
+    renderAuth();
+  }
+}
+
+async function bootstrap() {
+  const d = await call('bootstrap');
+  S.me = d.me; S.appName = d.appName; S.notice = d.notice; S.subjects = d.subjects;
+  S.sheetUrl = d.sheetUrl || ''; S.unanswered = d.unanswered || 0;
+  if (!S.subjects.some(s => s.id === S.subjectId)) S.subjectId = visibleSubjects()[0] ? visibleSubjects()[0].id : null;
+  document.title = S.appName || document.title;
+}
+
+function visibleSubjects() { return S.subjects.filter(s => s.active || isAdmin()); }
+function isAdmin() { return S.me && S.me.role === 'admin'; }
+
+function logout(silent) {
+  Object.assign(S, { token: null, me: null, tab: 'lessons', qnaMode: 'board', qFilter: 'all', unanswered: 0, sheetUrl: '' });
+  saveStore({ token: null });
+  renderAuth();
+  if (!silent) toast('로그아웃했어요.');
+}
+
+async function renderAuth(mode) {
+  mode = mode || 'login';
+  const app = clear($('#app'));
+  const wrap = el('div', { class: 'auth' });
+  app.append(wrap);
+  const title = el('h1', null, S.appName || ' ');
+  wrap.append(el('div', { class: 'logo' }, '⚛︎'), title,
+    el('p', { class: 'sub' }, mode === 'admin' ? '선생님(마스터) 로그인' : '닉네임으로 로그인하고 수업·보충·질문을 확인하세요.'));
+  if (!S.appName) call('publicInfo').then(d => { S.appName = d.appName; title.textContent = d.appName; document.title = d.appName; }).catch(() => {});
+
+  const done = d => {
+    S.token = d.token; saveStore({ token: d.token });
+    return bootstrap().then(() => { S.tab = 'lessons'; renderMain(); toast(S.me.nickname + '님, 반가워요!'); });
+  };
+
+  if (mode === 'admin') {
+    const pw = input({ type: 'password', placeholder: '[설정] 시트의 선생님 비밀번호', autocomplete: 'current-password' });
+    const btn = el('button', { class: 'btn block', type: 'submit' }, '선생님으로 로그인');
+    wrap.append(el('form', { onsubmit: e => { e.preventDefault(); busy(btn, () => call('adminLogin', { password: pw.value }).then(done)); } },
+      field('비밀번호', pw), btn));
+    wrap.append(el('button', { class: 'link-btn', onclick: () => renderAuth('login') }, '← 학생 로그인으로'));
+    return;
+  }
+
+  const seg = el('div', { class: 'seg' },
+    el('button', { class: mode === 'login' ? 'on' : '', onclick: () => renderAuth('login') }, '로그인'),
+    el('button', { class: mode === 'signup' ? 'on' : '', onclick: () => renderAuth('signup') }, '처음이에요 (가입)'));
+  wrap.append(seg);
+
+  if (mode === 'login') {
+    const nick = input({ placeholder: '닉네임', autocomplete: 'username', value: loadStore().lastNick || '' });
+    const pw = input({ type: 'password', placeholder: '비밀번호', autocomplete: 'current-password' });
+    const btn = el('button', { class: 'btn block', type: 'submit' }, '로그인');
+    wrap.append(el('form', { onsubmit: e => {
+      e.preventDefault();
+      saveStore({ lastNick: nick.value.trim() });
+      busy(btn, () => call('login', { nickname: nick.value, password: pw.value }).then(done));
+    } }, field('닉네임', nick), field('비밀번호', pw), btn));
+    wrap.append(el('p', { class: 'small muted', style: 'text-align:center;margin-top:16px' }, '비밀번호를 잊었다면 선생님께 초기화를 요청하세요.'));
+  } else {
+    const nick = input({ placeholder: '예: 뉴턴짱', maxlength: 12, autocomplete: 'username' });
+    const name = input({ placeholder: '실명', maxlength: 20, autocomplete: 'name' });
+    const phone = input({ placeholder: '010-1234-5678', type: 'tel', inputmode: 'tel', autocomplete: 'tel' });
+    const pw = input({ type: 'password', placeholder: '4자 이상', autocomplete: 'new-password' });
+    const pw2 = input({ type: 'password', placeholder: '한 번 더', autocomplete: 'new-password' });
+    const btn = el('button', { class: 'btn block', type: 'submit' }, '가입하기');
+    wrap.append(el('form', { onsubmit: e => {
+      e.preventDefault();
+      if (pw.value !== pw2.value) return toast('비밀번호가 서로 달라요.', true);
+      saveStore({ lastNick: nick.value.trim() });
+      busy(btn, () => call('signup', { nickname: nick.value, name: name.value, phone: phone.value, password: pw.value }).then(done));
+    } },
+      field('닉네임', nick, '앱에서 다른 학생들에게는 닉네임만 보여요. (2~12자)'),
+      el('div', { class: 'lock-note' }, icon('lock', 16), el('div', null, el('b', null, '이름과 휴대폰 번호는 선생님만 볼 수 있어요.'), ' 다른 학생에게는 절대 공개되지 않아요.')),
+      field('이름', name),
+      field('휴대폰 번호', phone),
+      field('비밀번호', pw),
+      field('비밀번호 확인', pw2),
+      btn));
+  }
+  wrap.append(el('button', { class: 'link-btn', style: 'margin-top:18px', onclick: () => renderAuth('admin') }, '선생님 로그인'));
+}
+
+/* =========================================================
+ * 메인 화면 (상단바 + 하단 탭)
+ * ======================================================= */
+const TABS_STUDENT = [['lessons', '수업', 'book'], ['booking', '보충예약', 'cal'], ['qna', '질문', 'chat'], ['me', '내 정보', 'user']];
+const TABS_ADMIN = [['lessons', '수업', 'book'], ['booking', '보충현황', 'cal'], ['qna', '질문답변', 'chat'], ['admin', '관리', 'gear']];
+
+function renderMain() {
+  const app = clear($('#app'));
+  app.append(el('header', { class: 'topbar' },
+    el('h1', null, S.appName),
+    el('span', { class: 'who' + (isAdmin() ? ' admin' : '') }, isAdmin() ? '선생님' : S.me.nickname)));
+  app.append(el('main', { id: 'view' }));
+  const tabs = isAdmin() ? TABS_ADMIN : TABS_STUDENT;
+  if (!tabs.some(t => t[0] === S.tab)) S.tab = 'lessons';
+  const inner = el('div', { class: 'nav-inner' });
+  tabs.forEach(([key, label, ic]) => {
+    inner.append(el('button', { class: S.tab === key ? 'on' : '', 'data-tab': key, onclick: () => { S.tab = key; renderMain(); window.scrollTo(0, 0); } },
+      icon(ic), label,
+      key === 'qna' && isAdmin() && S.unanswered ? el('span', { class: 'dot' }, S.unanswered) : null));
+  });
+  app.append(el('nav', { class: 'nav' }, inner));
+  ({ lessons: viewLessons, booking: viewBooking, qna: viewQna, me: viewMe, admin: viewAdmin })[S.tab]($('#view'));
+}
+
+function subjectChips(onChange) {
+  const subs = visibleSubjects();
+  if (!subs.length) return el('p', { class: 'muted' }, '아직 등록된 과목이 없어요.');
+  return el('div', { class: 'chips' }, subs.map(s => el('button', {
+    class: 'chip' + (s.id === S.subjectId ? ' on' : ''),
+    onclick: () => { S.subjectId = s.id; saveStore({ subjectId: s.id }); onChange(); },
+  }, s.name + (s.active ? '' : ' (숨김)'))));
+}
+
+/* =========================================================
+ * 1. 수업 탭
+ * ======================================================= */
+async function viewLessons(view, keepWeek) {
+  clear(view);
+  if (S.notice) view.append(el('div', { class: 'notice' }, el('b', null, '공지'), richText(S.notice)));
+  view.append(subjectChips(() => viewLessons(view)));
+  if (!S.subjectId) return;
+  if (isAdmin()) view.append(el('button', { class: 'btn ghost block', style: 'margin-bottom:12px', onclick: () => lessonForm(null, () => viewLessons(view)) }, '+ 수업 올리기'));
+  const box = el('div', null, loader());
+  view.append(box);
+  let d;
+  try { d = await call('lessonsList', { subjectId: S.subjectId }); }
+  catch (e) { clear(box).append(emptyState('⚠️', e.message)); return; }
+  clear(box);
+  if (!d.lessons.length) { box.append(emptyState('📚', '아직 올라온 수업이 없어요.')); return; }
+
+  const weeks = d.weeks;
+  let week = keepWeek && weeks.some(w => w.week === keepWeek) ? keepWeek
+    : (weeks.find(w => w.week === d.thisWeek) || weeks.find(w => w.week < d.thisWeek) || weeks[weeks.length - 1]).week;
+  const sel = el('select', { class: 'input', onchange: () => { week = sel.value; draw(); } },
+    weeks.map(w => el('option', { value: w.week }, w.label)));
+  sel.value = week;
+  const list = el('div');
+  box.append(el('div', { class: 'week-select' }, sel), list);
+
+  function draw() {
+    clear(list);
+    d.lessons.filter(l => l.week === week).forEach(l => list.append(lessonCard(l, () => viewLessons(view, week))));
+  }
+  draw();
+}
+
+function lessonCard(l, refresh) {
+  const card = el('div', { class: 'card lesson' }, el('h3', null, l.title));
+  if (l.content) card.append(el('div', { class: 'block' }, el('div', { class: 'block-title' }, '📖 수업 내용'), richText(l.content)));
+  if (l.videos.length) {
+    card.append(el('div', { class: 'block' }, el('div', { class: 'block-title' }, '🎬 수업 영상'),
+      l.videos.map(v => el('a', { class: 'video', href: v.url, target: '_blank', rel: 'noopener' },
+        el('span', { class: 'play' }, icon('play', 18)),
+        el('span', { class: 'grow' }, el('div', { class: 't' }, v.title), el('div', { class: 'u' }, v.url))))));
+  }
+  if (l.homework) card.append(el('div', { class: 'block hw' }, el('div', { class: 'block-title' }, '✏️ 숙제'), richText(l.homework)));
+  if (isAdmin()) {
+    card.append(el('div', { class: 'admin-bar' },
+      el('span', { class: 'small muted grow' }, '수정 ' + shortDate(l.updatedAt)),
+      el('button', { class: 'btn line sm', onclick: () => lessonForm(l, refresh) }, '수정'),
+      el('button', { class: 'btn danger sm', onclick: async e => {
+        if (!(await confirmSheet('수업을 삭제할까요?', l.title, '삭제', true))) return;
+        await busy(e.target, () => call('lessonDelete', { id: l.id }));
+        toast('삭제했어요.'); refresh();
+      } }, '삭제')));
+  }
+  return card;
+}
+
+function lessonForm(l, refresh) {
+  l = l || {};
+  const subj = el('select', { class: 'input' }, S.subjects.map(s => el('option', { value: s.id }, s.name)));
+  subj.value = l.subjectId || S.subjectId;
+  const week = input({ type: 'date', value: l.week || todayYmd() });
+  const title = input({ placeholder: '예: 11/10(월) 1강 - 운동의 법칙', value: l.title || '' });
+  const content = textarea({ placeholder: '이번 수업에서 배운 내용', value: l.content || '' });
+  const videos = textarea({ placeholder: '1강 풀이 | https://youtu.be/...\nhttps://youtu.be/...', value: l.videosRaw || '', style: 'min-height:80px' });
+  const hw = textarea({ placeholder: '예: 교재 p.32~35, 3번 문제는 풀이까지', value: l.homework || '', style: 'min-height:80px' });
+  const save = el('button', { class: 'btn' }, l.id ? '수정 저장' : '올리기');
+  const close = openSheet(l.id ? '수업 수정' : '수업 올리기', el('div', null,
+    field('과목', subj),
+    field('주차', week, '이 날짜가 포함된 주(월~일)에 표시돼요.'),
+    field('제목', title),
+    field('수업 내용', content),
+    field('수업 영상 링크', videos, '한 줄에 하나씩. "제목 | 주소" 형식으로 쓰면 제목이 붙어요.'),
+    field('숙제', hw)),
+    [el('button', { class: 'btn line', onclick: () => close() }, '닫기'), save]);
+  save.addEventListener('click', () => busy(save, async () => {
+    await call('lessonSave', { id: l.id, subjectId: subj.value, week: week.value, title: title.value, content: content.value, videos: videos.value, homework: hw.value });
+    close(); toast('저장했어요.');
+    S.subjectId = subj.value; saveStore({ subjectId: subj.value });
+    refresh();
+  }));
+}
+
+/* =========================================================
+ * 2. 보충예약 탭
+ * ======================================================= */
+async function viewBooking(view) {
+  clear(view).append(loader());
+  let d;
+  try { d = await call('bookingSlots'); }
+  catch (e) { clear(view).append(emptyState('⚠️', e.message)); return; }
+  clear(view);
+  const refresh = () => viewBooking(view);
+
+  view.append(el('div', { class: 'card' },
+    el('h3', null, isAdmin() ? '보충수업 신청 현황' : '개인 보충수업 신청'),
+    el('div', { class: 'small muted' },
+      d.rule + ', 1시간 단위로 신청해요.',
+      d.cutoffHours ? ' 신청·취소는 시작 ' + d.cutoffHours + '시간 전까지 가능해요.' : '',
+      d.maxPerWeek ? ' 한 주에 최대 ' + d.maxPerWeek + '시간까지 신청할 수 있어요.' : ''),
+    isAdmin() && d.sheetUrl ? el('a', { class: 'btn ghost sm', style: 'margin-top:10px;text-decoration:none', href: d.sheetUrl, target: '_blank', rel: 'noopener' }, '구글시트 시간표 열기 ↗') : null));
+
+  view.append(el('div', { class: 'legend' },
+    el('span', null, el('i', { style: 'background:var(--primary-soft);border:1px solid var(--primary)' }), '신청 가능'),
+    isAdmin() ? null : el('span', null, el('i', { style: 'background:var(--mine-soft);border:1px solid var(--mine)' }), '내 예약'),
+    el('span', null, el('i', { style: 'background:var(--bg);border:1px solid var(--line)' }), '마감/지남')));
+
+  if (!d.days.length) view.append(emptyState('🗓️', '지금 신청할 수 있는 날짜가 없어요.'));
+  let lastWeek = null;
+  d.days.forEach(day => {
+    if (day.week !== lastWeek) {
+      lastWeek = day.week;
+      view.append(el('div', { class: 'section-title' }, weekTitle(day.week)));
+    }
+    const grid = el('div', { class: 'slots' });
+    day.slots.forEach(s => grid.append(isAdmin() ? adminSlot(day, s, refresh) : studentSlot(day, s, refresh)));
+    const booked = day.slots.reduce((n, s) => n + s.count, 0);
+    view.append(el('div', { class: 'card day' },
+      el('h3', null, day.label, el('span', { class: 'small muted' }, isAdmin() ? '신청 ' + booked + '건' : '')), grid));
+  });
+
+  if (!isAdmin()) {
+    const mine = [];
+    d.days.forEach(day => day.slots.forEach(s => { if (s.mine) mine.push(day.label + ' ' + s.label); }));
+    view.append(el('div', { class: 'section-title' }, '내 신청 내역'));
+    view.append(el('div', { class: 'card' }, mine.length ? mine.map(t => el('div', { class: 'list-row' }, el('span', { class: 'badge mine' }, '예약'), t))
+      : el('div', { class: 'muted small' }, '아직 신청한 보충수업이 없어요. 위에서 원하는 시간을 눌러 신청하세요.')));
+  }
+}
+
+function weekTitle(monday) {
+  const today = todayYmd();
+  const d = new Date(monday + 'T00:00:00Z');
+  const thisMon = new Date(today + 'T00:00:00Z');
+  thisMon.setUTCDate(thisMon.getUTCDate() - ((thisMon.getUTCDay() + 6) % 7));
+  const diff = Math.round((d - thisMon) / (7 * 864e5));
+  return diff === 0 ? '이번 주' : diff === 1 ? '다음 주' : diff + '주 뒤';
+}
+
+function studentSlot(day, s, refresh) {
+  const full = s.count >= s.capacity;
+  let cls = 'slot', sub;
+  if (s.mine) { cls += ' mine'; sub = '✓ 내 예약'; }
+  else if (!s.open) { cls += ' past'; sub = '마감'; }
+  else if (full) { cls += ' full'; sub = '마감'; }
+  else { cls += ' free'; sub = s.capacity > 1 ? '신청 (' + (s.capacity - s.count) + '자리)' : '신청 가능'; }
+  return el('button', { class: cls, onclick: () => {
+    if (s.mine) return cancelMine(day, s, refresh);
+    if (!s.open || full) return toast(s.open ? '이미 마감된 시간이에요.' : '신청 시간이 지났어요.');
+    bookForm(day, s, refresh);
+  } }, el('div', { class: 'h' }, s.hour + '시'), el('div', { class: 's' }, sub));
+}
+
+function bookForm(day, s, refresh) {
+  const memo = input({ placeholder: '예: 3단원 문제풀이 질문 (선택)', maxlength: 200 });
+  const ok = el('button', { class: 'btn' }, '신청하기');
+  const close = openSheet('보충수업 신청', el('div', null,
+    el('div', { class: 'card', style: 'background:var(--primary-soft);border:0' },
+      el('div', { style: 'font-size:18px;font-weight:800' }, day.label), el('div', null, s.label)),
+    field('선생님께 남길 메모', memo, '어떤 부분을 보충받고 싶은지 적어두면 좋아요.')),
+    [el('button', { class: 'btn line', onclick: () => close() }, '취소'), ok]);
+  ok.addEventListener('click', () => busy(ok, async () => {
+    await call('bookingBook', { date: day.date, hour: s.hour, memo: memo.value });
+    close(); toast('신청 완료! ' + day.label + ' ' + s.hour + '시');
+    refresh();
+  }).catch(() => refresh()));
+}
+
+async function cancelMine(day, s, refresh) {
+  if (!s.open) return toast('취소 가능 시간이 지났어요. 선생님께 직접 말씀해 주세요.', true);
+  if (!(await confirmSheet('예약을 취소할까요?', day.label + ' ' + s.label, '예약 취소', true))) return;
+  await busy(null, () => call('bookingCancel', { id: s.mine }));
+  toast('취소했어요.'); refresh();
+}
+
+function adminSlot(day, s, refresh) {
+  const has = s.count > 0;
+  return el('button', { class: 'slot' + (has ? ' admin-has' : (s.open ? '' : ' past')), onclick: () => {
+    if (!has) return;
+    const body = el('div', null, s.people.map(p => el('div', { class: 'list-row' },
+      el('div', { class: 'grow' },
+        el('div', { style: 'font-weight:700' }, p.name + ' ', el('span', { class: 'muted small' }, '(' + p.nickname + ')')),
+        el('a', { class: 'small', href: 'tel:' + p.phone }, p.phone),
+        p.memo ? el('div', { class: 'small muted' }, '메모: ' + p.memo) : null),
+      el('button', { class: 'btn danger sm', onclick: async e => {
+        if (!(await confirmSheet('이 예약을 취소할까요?', p.name + ' · ' + day.label + ' ' + s.label, '예약 취소', true))) return;
+        await busy(e.target, () => call('bookingCancel', { id: p.id }));
+        close(); toast('취소했어요.'); refresh();
+      } }, '취소'))));
+    const close = openSheet(day.label + ' ' + s.label, body, [el('button', { class: 'btn line', onclick: () => close() }, '닫기')]);
+  } },
+  el('div', { class: 'h' }, s.hour + '시'),
+  has ? el('div', { class: 'names' }, s.people.map(p => p.name).join(', ')) : el('div', { class: 's' }, s.open ? '비어 있음' : '지남'));
+}
+
+/* =========================================================
+ * 3. 질문 탭 (과목별 익명 게시판 + FAQ)
+ * ======================================================= */
+function viewQna(view) {
+  clear(view);
+  view.append(subjectChips(() => viewQna(view)));
+  if (!S.subjectId) return;
+  view.append(el('div', { class: 'seg' },
+    el('button', { class: S.qnaMode === 'board' ? 'on' : '', onclick: () => { S.qnaMode = 'board'; viewQna(view); } }, '질문 게시판'),
+    el('button', { class: S.qnaMode === 'faq' ? 'on' : '', onclick: () => { S.qnaMode = 'faq'; viewQna(view); } }, '자주 묻는 질문')));
+  const box = el('div', null, loader());
+  view.append(box);
+  (S.qnaMode === 'faq' ? drawFaq : drawBoard)(box, () => viewQna(view));
+}
+
+async function drawBoard(box, refresh) {
+  let list;
+  try { list = await call('questionsList', { subjectId: S.subjectId }); }
+  catch (e) { clear(box).append(emptyState('⚠️', e.message)); return; }
+  clear(box);
+
+  const filters = isAdmin() ? [['all', '전체'], ['wait', '답변 대기']] : [['all', '전체'], ['wait', '답변 대기'], ['mine', '내 질문']];
+  box.append(el('div', { class: 'row wrap', style: 'margin-bottom:10px' }, filters.map(([k, t]) =>
+    el('button', { class: 'chip' + (S.qFilter === k ? ' on' : ''), style: 'padding:6px 12px;font-size:13px', onclick: () => { S.qFilter = k; refresh(); } },
+      t + (k === 'wait' ? ' ' + list.filter(q => !q.answer).length : '')))));
+  if (!isAdmin()) {
+    box.append(el('div', { class: 'lock-note' }, icon('lock', 16), '질문은 익명으로 올라가요. 다른 학생은 누가 썼는지 알 수 없어요.'));
+  }
+
+  const shown = list.filter(q => S.qFilter === 'wait' ? !q.answer : S.qFilter === 'mine' ? q.mine : true);
+  if (!shown.length) box.append(emptyState('💬', list.length ? '해당하는 질문이 없어요.' : '아직 질문이 없어요. 첫 질문을 남겨보세요!'));
+  shown.forEach(q => box.append(questionCard(q, refresh)));
+
+  if (!isAdmin()) box.append(el('button', { class: 'btn fab', onclick: () => questionForm(refresh) }, '✏️ 질문하기'));
+}
+
+function questionCard(q, refresh) {
+  const body = el('div', { class: 'body hidden' });
+  const card = el('div', { class: 'card q' },
+    el('div', { class: 'meta' },
+      q.answer ? el('span', { class: 'badge ok' }, '답변 완료') : el('span', { class: 'badge wait' }, '답변 대기'),
+      q.mine ? el('span', { class: 'badge mine' }, '내 질문') : null,
+      q.inFaq ? el('span', { class: 'badge pri' }, 'FAQ') : null,
+      q.asker ? el('span', { class: 'small muted' }, q.asker) : null,
+      el('span', { class: 'date' }, shortDate(q.createdAt))),
+    el('h3', null, q.title),
+    body);
+  card.addEventListener('click', e => {
+    if (e.target.closest('button, a, textarea, input')) return;
+    body.classList.toggle('hidden');
+  });
+
+  body.append(richText(q.content));
+  if (q.answer && !isAdmin()) {
+    body.append(el('div', { class: 'answer' }, el('div', { class: 'who-a' }, '선생님 답변 · ' + shortDate(q.answeredAt)), richText(q.answer)));
+  }
+  if (isAdmin()) {
+    const ta = textarea({ placeholder: '답변을 입력하세요', value: q.answer || '' });
+    const save = el('button', { class: 'btn sm' }, q.answer ? '답변 수정' : '답변 등록');
+    save.addEventListener('click', () => busy(save, async () => {
+      await call('questionAnswer', { id: q.id, answer: ta.value });
+      toast('답변을 저장했어요.');
+      if (!q.answer && ta.value.trim()) S.unanswered = Math.max(0, S.unanswered - 1);
+      renderMain();
+    }));
+    body.append(el('div', { class: 'answer' }, el('div', { class: 'who-a' }, '내 답변'), ta,
+      el('div', { class: 'row', style: 'margin-top:8px;justify-content:flex-end;gap:6px' },
+        q.inFaq ? null : el('button', { class: 'btn line sm', onclick: e => busy(e.target, async () => {
+          if (!ta.value.trim() && !q.answer) throw new Error('답변을 먼저 등록해 주세요.');
+          await call('faqFromQuestion', { id: q.id }); toast('FAQ에 등록했어요. FAQ 탭에서 다듬을 수 있어요.'); refresh();
+        }) }, 'FAQ로 등록'),
+        el('button', { class: 'btn danger sm', onclick: async e => {
+          if (!(await confirmSheet('질문을 삭제할까요?', q.title, '삭제', true))) return;
+          await busy(e.target, () => call('questionDelete', { id: q.id }));
+          if (!q.answer) S.unanswered = Math.max(0, S.unanswered - 1);
+          toast('삭제했어요.'); renderMain();
+        } }, '삭제'),
+        save)));
+  } else if (q.mine && !q.answer) {
+    body.append(el('div', { class: 'row', style: 'justify-content:flex-end;margin-top:10px' },
+      el('button', { class: 'btn danger sm', onclick: async e => {
+        if (!(await confirmSheet('내 질문을 삭제할까요?', q.title, '삭제', true))) return;
+        await busy(e.target, () => call('questionDelete', { id: q.id }));
+        toast('삭제했어요.'); refresh();
+      } }, '삭제')));
+  }
+  return card;
+}
+
+function questionForm(refresh) {
+  const sub = S.subjects.find(s => s.id === S.subjectId);
+  const title = input({ placeholder: '한 줄 요약', maxlength: 100 });
+  const content = textarea({ placeholder: '궁금한 내용을 자세히 적어 주세요. (교재 쪽수, 문제 번호 등)' });
+  const ok = el('button', { class: 'btn' }, '익명으로 올리기');
+  const close = openSheet('질문하기', el('div', null,
+    el('div', { class: 'small muted', style: 'margin:-8px 0 12px' }, sub ? sub.name : ''),
+    field('제목', title), field('내용', content),
+    el('div', { class: 'lock-note' }, icon('lock', 16), '닉네임도 표시되지 않는 익명 질문이에요.')),
+    [el('button', { class: 'btn line', onclick: () => close() }, '취소'), ok]);
+  ok.addEventListener('click', () => busy(ok, async () => {
+    await call('questionCreate', { subjectId: S.subjectId, title: title.value, content: content.value });
+    close(); toast('질문을 올렸어요. 답변이 달리면 여기서 확인할 수 있어요.');
+    S.qFilter = 'all'; refresh();
+  }));
+}
+
+async function drawFaq(box, refresh) {
+  let list;
+  try { list = await call('faqList', { subjectId: S.subjectId }); }
+  catch (e) { clear(box).append(emptyState('⚠️', e.message)); return; }
+  clear(box);
+  if (isAdmin()) box.append(el('button', { class: 'btn ghost block', style: 'margin-bottom:12px', onclick: () => faqForm(null, refresh) }, '+ FAQ 직접 추가'));
+  else box.append(el('p', { class: 'small muted', style: 'margin:0 4px 10px' }, '이 과목에서 다른 학생들이 자주 했던 질문과 답변이에요.'));
+  if (!list.length) { box.append(emptyState('🙋', '아직 정리된 FAQ가 없어요.')); return; }
+  list.forEach((f, i) => {
+    box.append(el('details', { class: 'card faq-item' },
+      el('summary', null, el('span', { class: 'qmark' }, 'Q' + (i + 1)), el('span', { class: 'pre grow' }, f.question)),
+      el('div', { class: 'a' }, el('span', { class: 'amark' }, 'A'), el('div', { class: 'grow' }, f.answer ? richText(f.answer) : el('span', { class: 'muted' }, '(답변 준비 중)'))),
+      isAdmin() ? el('div', { class: 'admin-bar' },
+        el('button', { class: 'btn line sm', onclick: () => faqForm(f, refresh) }, '수정'),
+        el('button', { class: 'btn danger sm', onclick: async e => {
+          if (!(await confirmSheet('FAQ를 삭제할까요?', f.question, '삭제', true))) return;
+          await busy(e.target, () => call('faqDelete', { id: f.id }));
+          toast('삭제했어요.'); refresh();
+        } }, '삭제')) : null));
+  });
+}
+
+function faqForm(f, refresh) {
+  f = f || {};
+  const q = textarea({ value: f.question || '', style: 'min-height:80px' });
+  const a = textarea({ value: f.answer || '' });
+  const ok = el('button', { class: 'btn' }, '저장');
+  const close = openSheet(f.id ? 'FAQ 수정' : 'FAQ 추가', el('div', null, field('질문', q), field('답변', a)),
+    [el('button', { class: 'btn line', onclick: () => close() }, '취소'), ok]);
+  ok.addEventListener('click', () => busy(ok, async () => {
+    await call('faqSave', { id: f.id, subjectId: S.subjectId, question: q.value, answer: a.value });
+    close(); toast('저장했어요.'); refresh();
+  }));
+}
+
+/* =========================================================
+ * 4. 내 정보 (학생)
+ * ======================================================= */
+async function viewMe(view) {
+  clear(view).append(loader());
+  let d;
+  try { d = await call('myInfo'); }
+  catch (e) { clear(view).append(emptyState('⚠️', e.message)); return; }
+  clear(view);
+  view.append(el('div', { class: 'card' },
+    el('h3', null, d.nickname),
+    el('div', { class: 'small muted', style: 'margin-bottom:12px' }, '다른 학생에게는 닉네임만 보여요.'),
+    el('dl', { class: 'kv' },
+      el('dt', null, '이름'), el('dd', null, d.name),
+      el('dt', null, '휴대폰'), el('dd', null, d.phone),
+      el('dt', null, '가입일'), el('dd', null, String(d.createdAt).slice(0, 10))),
+    el('div', { class: 'lock-note', style: 'margin:12px 0 0' }, icon('lock', 16), '이름과 휴대폰 번호는 나와 선생님만 볼 수 있어요.')));
+
+  view.append(el('div', { class: 'section-title' }, '다가오는 보충수업'));
+  view.append(el('div', { class: 'card' }, d.bookings.length
+    ? d.bookings.map(b => el('div', { class: 'list-row' }, el('span', { class: 'badge mine' }, '예약'), el('span', { class: 'grow' }, b.label)))
+    : el('div', { class: 'small muted' }, '예약된 보충수업이 없어요.')));
+
+  view.append(el('div', { class: 'section-title' }, '계정'));
+  view.append(el('div', { class: 'card' },
+    el('button', { class: 'btn line block', style: 'margin-bottom:8px', onclick: passwordForm }, '비밀번호 바꾸기'),
+    el('button', { class: 'btn danger block', onclick: () => logout() }, '로그아웃')));
+}
+
+function passwordForm() {
+  const cur = input({ type: 'password', autocomplete: 'current-password' });
+  const nw = input({ type: 'password', autocomplete: 'new-password', placeholder: '4자 이상' });
+  const ok = el('button', { class: 'btn' }, '바꾸기');
+  const close = openSheet('비밀번호 바꾸기', el('div', null, field('현재 비밀번호', cur), field('새 비밀번호', nw)),
+    [el('button', { class: 'btn line', onclick: () => close() }, '취소'), ok]);
+  ok.addEventListener('click', () => busy(ok, async () => {
+    const d = await call('changePassword', { current: cur.value, next: nw.value });
+    S.token = d.token; saveStore({ token: d.token });
+    close(); toast('비밀번호를 바꿨어요.');
+  }));
+}
+
+/* =========================================================
+ * 5. 관리 (선생님)
+ * ======================================================= */
+function viewAdmin(view) {
+  clear(view);
+
+  // 과목 관리
+  view.append(el('div', { class: 'section-title' }, el('span', { class: 'grow' }, '과목 관리'),
+    el('button', { class: 'btn ghost sm', onclick: () => subjectForm(null, () => viewAdmin(view)) }, '+ 과목 추가')));
+  const subCard = el('div', { class: 'card' });
+  view.append(subCard);
+  if (!S.subjects.length) subCard.append(el('div', { class: 'muted small' }, '과목이 없어요.'));
+  S.subjects.forEach((s, i) => {
+    const move = dir => e => busy(e.currentTarget, async () => { S.subjects = await call('subjectMove', { id: s.id, dir }); viewAdmin(view); });
+    subCard.append(el('div', { class: 'list-row' },
+      el('div', { class: 'grow' }, el('div', { style: 'font-weight:700' + (s.active ? '' : ';color:var(--muted);text-decoration:line-through') }, s.name),
+        s.active ? null : el('div', { class: 'small muted' }, '학생에게 숨겨짐')),
+      el('button', { class: 'icon-btn', title: '위로', disabled: i === 0, onclick: move(-1) }, icon('up', 18)),
+      el('button', { class: 'icon-btn', title: '아래로', disabled: i === S.subjects.length - 1, onclick: move(1) }, icon('down', 18)),
+      el('button', { class: 'icon-btn', title: '이름 바꾸기', onclick: () => subjectForm(s, () => viewAdmin(view)) }, icon('edit', 18))));
+  });
+  view.append(el('p', { class: 'small muted', style: 'margin:-4px 4px 0' }, '과목명을 바꿔도 수업·질문·FAQ는 그대로 이어져요. 끝난 과목은 숨기면 학생 화면에서 사라져요.'));
+
+  // 학생 목록
+  view.append(el('div', { class: 'section-title' }, '학생 목록 (선생님만 볼 수 있음)'));
+  const stuCard = el('div', { class: 'card' }, loader());
+  view.append(stuCard);
+  loadStudents(stuCard);
+
+  // 바로가기
+  view.append(el('div', { class: 'section-title' }, '바로가기'));
+  view.append(el('div', { class: 'card' },
+    S.sheetUrl ? el('a', { class: 'btn ghost block', style: 'text-decoration:none;margin-bottom:8px', href: S.sheetUrl, target: '_blank', rel: 'noopener' }, '구글 스프레드시트 열기 ↗') : null,
+    el('p', { class: 'small muted', style: 'margin:0 0 10px' }, '앱 이름, 공지사항, 보충 요일·시간·정원, 선생님 비밀번호, 알림 이메일은 스프레드시트의 [설정] 시트에서 바꿀 수 있어요.'),
+    el('button', { class: 'btn danger block', onclick: () => logout() }, '로그아웃')));
+}
+
+function subjectForm(s, refresh) {
+  s = s || {};
+  const name = input({ value: s.name || '', placeholder: '예: 겨울특강 물리학 개념(월금)', maxlength: 60 });
+  const ok = el('button', { class: 'btn' }, '저장');
+  const actions = [el('button', { class: 'btn line', onclick: () => close() }, '취소'), ok];
+  const body = el('div', null, field('과목명', name));
+  if (s.id) {
+    body.append(el('button', { class: 'btn ' + (s.active ? 'danger' : 'ghost') + ' block', onclick: e => busy(e.target, async () => {
+      S.subjects = await call('subjectSetActive', { id: s.id, active: !s.active });
+      close(); toast(s.active ? '학생 화면에서 숨겼어요.' : '다시 보이게 했어요.'); refresh();
+    }) }, s.active ? '학생에게 숨기기' : '다시 보이기'));
+  }
+  const close = openSheet(s.id ? '과목 수정' : '과목 추가', body, actions);
+  ok.addEventListener('click', () => busy(ok, async () => {
+    S.subjects = await call('subjectSave', { id: s.id, name: name.value });
+    if (!S.subjectId && S.subjects[0]) S.subjectId = S.subjects[0].id;
+    close(); toast('저장했어요.'); refresh();
+  }));
+}
+
+async function loadStudents(card) {
+  let list;
+  try { list = await call('studentsList'); }
+  catch (e) { clear(card).append(el('div', { class: 'muted' }, e.message)); return; }
+  clear(card);
+  const q = input({ placeholder: '이름·닉네임·번호 검색', type: 'search', style: 'margin-bottom:6px' });
+  const rows = el('div');
+  card.append(el('div', { class: 'small muted', style: 'margin-bottom:8px' }, '총 ' + list.length + '명'), q, rows);
+  const draw = () => {
+    clear(rows);
+    const k = q.value.trim().toLowerCase();
+    const shown = list.filter(u => !k || (u.name + u.nickname + u.phone).toLowerCase().indexOf(k) >= 0);
+    if (!shown.length) rows.append(el('div', { class: 'muted small', style: 'padding:10px 0' }, '학생이 없어요.'));
+    shown.forEach(u => rows.append(el('div', { class: 'list-row' },
+      el('div', { class: 'grow' },
+        el('div', { style: 'font-weight:700' }, u.name, ' ', el('span', { class: 'muted small' }, '· ' + u.nickname)),
+        el('a', { class: 'small', href: 'tel:' + u.phone }, u.phone),
+        el('span', { class: 'small muted' }, ' · 보충 ' + u.bookings + '회')),
+      el('button', { class: 'btn line sm', onclick: () => studentMenu(u, () => loadStudents(card)) }, '관리'))));
+  };
+  q.addEventListener('input', draw);
+  draw();
+}
+
+function studentMenu(u, refresh) {
+  const body = el('div', null,
+    el('dl', { class: 'kv', style: 'margin-bottom:16px' },
+      el('dt', null, '닉네임'), el('dd', null, u.nickname),
+      el('dt', null, '이름'), el('dd', null, u.name),
+      el('dt', null, '휴대폰'), el('dd', null, u.phone),
+      el('dt', null, '가입일'), el('dd', null, String(u.createdAt).slice(0, 10))),
+    el('button', { class: 'btn line block', style: 'margin-bottom:8px', onclick: async e => {
+      if (!(await confirmSheet('비밀번호를 초기화할까요?', u.name + ' 학생의 비밀번호가 임시 번호로 바뀌어요.', '초기화'))) return;
+      const d = await busy(e.target, () => call('studentResetPassword', { id: u.id }));
+      close();
+      openSheet('임시 비밀번호', el('div', null,
+        el('p', null, u.name + '(' + u.nickname + ') 학생에게 알려주세요.'),
+        el('div', { style: 'font-size:34px;font-weight:900;letter-spacing:6px;text-align:center;padding:12px;background:var(--primary-soft);border-radius:12px' }, d.tempPassword),
+        el('p', { class: 'small muted' }, '로그인 후 [내 정보 → 비밀번호 바꾸기]에서 바꾸도록 안내해 주세요.')));
+    } }, '비밀번호 초기화'),
+    el('button', { class: 'btn danger block', onclick: async e => {
+      if (!(await confirmSheet('학생 계정을 삭제할까요?', u.name + '(' + u.nickname + ')\n앞으로 잡힌 보충 예약도 함께 취소돼요. 되돌릴 수 없어요.', '삭제', true))) return;
+      await busy(e.target, () => call('studentDelete', { id: u.id }));
+      close(); toast('삭제했어요.'); refresh();
+    } }, '계정 삭제'));
+  const close = openSheet(u.name + ' 학생', body, [el('button', { class: 'btn line', onclick: () => close() }, '닫기')]);
+}
+
+start();
+</script>
+</body>
+</html>
