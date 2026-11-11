@@ -20,6 +20,8 @@ const { startServer } = require('./server');
     videos: '3강 개념 정리 | https://youtu.be/abc123\n3강 문제풀이 | https://youtu.be/def456',
     homework: '교재 p.32~35 전 문항\n오답노트 3문제 이상',
   });
+  g.api('noticeSave', admin, { subjectId: '', title: '기말고사 대비 특강 일정', content: '12/20(토) 오후 2시, 전 반 공통입니다.', pinned: true });
+  g.api('noticeSave', admin, { subjectId: subs[0].id, title: '다음 주 월요일 휴강', content: '보강은 금요일 수업 뒤에 30분 진행해요.' });
 
   const browser = await chromium.launch();
   const errors = [];
@@ -41,6 +43,13 @@ const { startServer } = require('./server');
   await page.getByRole('button', { name: '가입하기' }).click();
   await page.getByText('3강 개념 정리').waitFor();
   await shot(page, '02-lessons');
+
+  // --- Notices (unread badge → read)
+  await page.locator('nav [data-tab=notice] .dot').waitFor();
+  await page.locator('nav [data-tab=notice]').click();
+  await page.getByText('다음 주 월요일 휴강').waitFor();
+  await shot(page, '02b-notices');
+  if (await page.locator('nav [data-tab=notice] .dot').count()) throw new Error('unread badge should clear');
 
   // --- Booking
   await page.locator('nav [data-tab=booking]').click();
@@ -90,6 +99,15 @@ const { startServer } = require('./server');
   await page.locator('.slot.admin-has').first().waitFor();
   await shot(page, '09-teacher-booking');
 
+  await page.locator('nav [data-tab=notice]').click();
+  await page.getByRole('button', { name: '+ 공지 쓰기' }).click();
+  await page.getByPlaceholder('예: 다음 주 월요일 휴강 안내').fill('심화반 교재 변경');
+  await page.locator('.sheet select').selectOption({ label: '겨울특강 물리학 심화(화목)' });
+  await page.locator('.sheet textarea').fill('다음 수업부터 새 교재를 가져오세요.');
+  await shot(page, '09b-teacher-notice-form');
+  await page.getByRole('button', { name: '올리기' }).click();
+  await page.getByText('심화반 교재 변경').waitFor();
+
   await page.locator('nav [data-tab=admin]').click();
   await page.getByText('총 1명').waitFor();
   await page.locator('.list-row .icon-btn[title="이름 바꾸기"]').first().click();
@@ -103,6 +121,7 @@ const { startServer } = require('./server');
   await page.getByPlaceholder('비밀번호').fill('abcd');
   await page.locator('form button[type=submit]').click();
   await page.locator('nav [data-tab=qna]').click();
+  await page.locator('.chip', { hasText: '개념반' }).click();
   await page.locator('.card.q h3').first().click();
   await page.getByText('선생님 답변').waitFor();
   await shot(page, '11-student-answer');

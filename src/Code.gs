@@ -44,6 +44,11 @@ const SHEET_DEFS = {
     fields: ['id', 'subjectId', 'question', 'answer', 'order', 'sourceId'],
     headers: ['id', '과목id', '질문', '답변', '순서', '원본질문id'],
   },
+  notices: {
+    name: '공지',
+    fields: ['id', 'subjectId', 'title', 'content', 'pinned', 'createdAt', 'updatedAt'],
+    headers: ['id', '과목id(비우면 전체)', '제목', '내용', '상단고정(Y/N)', '작성일시', '수정일시'],
+  },
   settings: {
     name: '설정',
     fields: ['label', 'value', 'desc'],
@@ -148,6 +153,7 @@ const HANDLERS = {
   questionCreate: { auth: 'user', write: true, fn: questionCreate_ },
   questionDelete: { auth: 'user', write: true, fn: questionDelete_ },
   faqList: { auth: 'user', fn: faqList_ },
+  noticesList: { auth: 'user', fn: noticesList_ },
   myInfo: { auth: 'user', fn: myInfo_ },
   changePassword: { auth: 'user', write: true, fn: changePassword_ },
 
@@ -160,6 +166,8 @@ const HANDLERS = {
   questionAnswer: { auth: 'admin', write: true, fn: questionAnswer_ },
   faqSave: { auth: 'admin', write: true, fn: faqSave_ },
   faqDelete: { auth: 'admin', write: true, fn: faqDelete_ },
+  noticeSave: { auth: 'admin', write: true, fn: noticeSave_ },
+  noticeDelete: { auth: 'admin', write: true, fn: noticeDelete_ },
   faqFromQuestion: { auth: 'admin', write: true, fn: faqFromQuestion_ },
   studentsList: { auth: 'admin', fn: studentsList_ },
   studentResetPassword: { auth: 'admin', write: true, fn: studentResetPassword_ },
@@ -215,6 +223,7 @@ function bootstrap_(p, ctx) {
     appName: s.appName,
     notice: s.notice,
     subjects: subjectsFor_(ctx),
+    noticeStamps: noticeStamps_(ctx),
   };
   if (ctx.role === 'admin') {
     out.sheetUrl = SpreadsheetApp.getActiveSpreadsheet().getUrl();
@@ -606,6 +615,56 @@ function questionAnswer_(p) {
   q.answer = String(p.answer || '').trim().slice(0, 10000);
   q.answeredAt = q.answer ? nowStr_() : '';
   update_('questions', q);
+  return true;
+}
+
+/* =========================================================
+ * 반별 공지사항
+ * ======================================================= */
+
+/** 과목(반) 공지 + 전체 공지. 고정 공지가 먼저, 그다음 최신순. */
+function noticesList_(p, ctx) {
+  const subjectNames = {};
+  rows_('subjects').forEach(s => { subjectNames[s.id] = s.name; });
+  return rows_('notices')
+    .filter(n => !n.subjectId || n.subjectId === p.subjectId)
+    .sort((a, b) => (a.pinned === 'Y') !== (b.pinned === 'Y') ? (a.pinned === 'Y' ? -1 : 1) : (a.createdAt < b.createdAt ? 1 : -1))
+    .map(n => ({
+      id: n.id, subjectId: n.subjectId, scope: n.subjectId ? (subjectNames[n.subjectId] || '') : '전체 공지',
+      title: n.title, content: n.content, pinned: n.pinned === 'Y', createdAt: n.createdAt, updatedAt: n.updatedAt,
+    }));
+}
+
+/** 새 공지 표시용: 학생이 볼 수 있는 공지의 (과목, 작성일시) 목록 */
+function noticeStamps_(ctx) {
+  const visible = {};
+  subjectsFor_(ctx).forEach(s => { visible[s.id] = true; });
+  return rows_('notices')
+    .filter(n => !n.subjectId || visible[n.subjectId])
+    .map(n => ({ id: n.id, subjectId: n.subjectId, createdAt: n.createdAt }));
+}
+
+function noticeSave_(p) {
+  const subjectId = String(p.subjectId || '');
+  if (subjectId && !rows_('subjects').some(s => s.id === subjectId)) throw new Error('반(과목)을 선택해 주세요.');
+  const title = clean_(p.title, 100);
+  const content = String(p.content || '').trim().slice(0, 20000);
+  if (!title) throw new Error('제목을 입력해 주세요.');
+  const data = { subjectId, title, content, pinned: p.pinned ? 'Y' : 'N', updatedAt: nowStr_() };
+  if (p.id) {
+    const n = rows_('notices').find(x => x.id === p.id);
+    if (!n) throw new Error('공지를 찾을 수 없어요.');
+    Object.assign(n, data);
+    update_('notices', n);
+  } else {
+    insert_('notices', Object.assign({ id: newId_(), createdAt: nowStr_() }, data));
+  }
+  return true;
+}
+
+function noticeDelete_(p) {
+  const n = rows_('notices').find(x => x.id === p.id);
+  if (n) remove_('notices', n);
   return true;
 }
 

@@ -163,6 +163,24 @@ t('questions: anonymous, answer, faq', () => {
   assert(g.api('questionsList', admin, { subjectId: subjects[0].id }).find(q => q.id === q1.id).inFaq);
 });
 
+t('notices: per-class + all-class, pinned first, admin only', () => {
+  throws(() => g.api('noticeSave', s1.token, { subjectId: subjects[0].id, title: 'x' }), /선생님만/);
+  throws(() => g.api('noticeSave', admin, { subjectId: subjects[0].id, title: '' }), /제목/);
+  g.api('noticeSave', admin, { subjectId: subjects[0].id, title: '개념반 휴강', content: '월요일 휴강' });
+  g.api('noticeSave', admin, { subjectId: subjects[1].id, title: '심화반 교재', content: '교재 지참' });
+  g.api('noticeSave', admin, { subjectId: '', title: '전체: 시험 일정', content: '12/20', pinned: true });
+  const a = g.api('noticesList', s1.token, { subjectId: subjects[0].id });
+  assert.deepStrictEqual(a.map(n => n.title), ['전체: 시험 일정', '개념반 휴강']);
+  assert(a[0].pinned && a[0].scope === '전체 공지');
+  const b = g.api('noticesList', s1.token, { subjectId: subjects[1].id });
+  assert.deepStrictEqual(b.map(n => n.title).sort(), ['심화반 교재', '전체: 시험 일정'].sort());
+  assert.strictEqual(g.api('bootstrap', s1.token).noticeStamps.length, 3);
+  g.api('noticeSave', admin, { id: a[1].id, subjectId: subjects[0].id, title: '개념반 휴강(수정)', content: '' });
+  g.api('noticeDelete', admin, { id: b.find(n => n.title === '심화반 교재').id });
+  assert.strictEqual(g.api('bootstrap', s1.token).noticeStamps.length, 2);
+  assert(g.api('noticesList', s1.token, { subjectId: subjects[0].id }).some(n => n.title === '개념반 휴강(수정)'));
+});
+
 t('password change invalidates old token; admin reset works', () => {
   const old = s1.token;
   const r = g.api('changePassword', s1.token, { current: 'abcd', next: 'newpw' });

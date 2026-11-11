@@ -75,7 +75,7 @@ main { padding: 4px 16px calc(var(--nav-h) + env(safe-area-inset-bottom) + 24px)
 }
 .nav-inner { max-width: 640px; margin: 0 auto; display: flex; height: var(--nav-h); }
 .nav button {
-  flex: 1; border: 0; background: none; cursor: pointer; color: var(--muted);
+  flex: 1; min-width: 0; border: 0; background: none; cursor: pointer; color: var(--muted);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   font-size: 12px; font-weight: 600; position: relative;
 }
@@ -181,6 +181,8 @@ textarea.input { min-height: 110px; resize: vertical; }
 .slot.free .s { color: var(--primary); font-weight: 700; }
 .slot.mine { border-color: var(--mine); background: var(--mine-soft); }
 .slot.mine .s { color: var(--mine); font-weight: 800; }
+.notice-card.pinned { border-color: var(--primary); }
+.notice-card h3 { margin-bottom: 8px; }
 .slot.full, .slot.past { background: var(--bg); color: var(--muted); cursor: default; }
 .slot.past .h { text-decoration: line-through; }
 .slot.admin-has { border-color: var(--primary); background: var(--primary-soft); cursor: pointer; }
@@ -243,7 +245,7 @@ textarea.input { min-height: 110px; resize: vertical; }
  * 서버 호출
  * ======================================================= */
 const STORE_KEY = 'classapp.v1';
-const S = { token: null, me: null, subjects: [], subjectId: null, tab: 'lessons', appName: '', notice: '', qnaMode: 'board', qFilter: 'all', unanswered: 0, sheetUrl: '' };
+const S = { token: null, me: null, subjects: [], subjectId: null, tab: 'lessons', appName: '', notice: '', qnaMode: 'board', qFilter: 'all', unanswered: 0, sheetUrl: '', noticeStamps: [] };
 
 function loadStore() { try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch (e) { return {}; } }
 function saveStore(patch) { try { localStorage.setItem(STORE_KEY, JSON.stringify(Object.assign(loadStore(), patch))); } catch (e) {} }
@@ -315,6 +317,8 @@ const ICONS = {
   up: '<path d="M6 15l6-6 6 6"/>',
   down: '<path d="M6 9l6 6 6-6"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/>',
+  bell: '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  pin: '<path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
 };
 function icon(name, size) {
@@ -396,7 +400,7 @@ async function start() {
 async function bootstrap() {
   const d = await call('bootstrap');
   S.me = d.me; S.appName = d.appName; S.notice = d.notice; S.subjects = d.subjects;
-  S.sheetUrl = d.sheetUrl || ''; S.unanswered = d.unanswered || 0;
+  S.sheetUrl = d.sheetUrl || ''; S.unanswered = d.unanswered || 0; S.noticeStamps = d.noticeStamps || [];
   if (!S.subjects.some(s => s.id === S.subjectId)) S.subjectId = visibleSubjects()[0] ? visibleSubjects()[0].id : null;
   document.title = S.appName || document.title;
 }
@@ -405,7 +409,7 @@ function visibleSubjects() { return S.subjects.filter(s => s.active || isAdmin()
 function isAdmin() { return S.me && S.me.role === 'admin'; }
 
 function logout(silent) {
-  Object.assign(S, { token: null, me: null, tab: 'lessons', qnaMode: 'board', qFilter: 'all', unanswered: 0, sheetUrl: '' });
+  Object.assign(S, { token: null, me: null, tab: 'lessons', qnaMode: 'board', qFilter: 'all', unanswered: 0, sheetUrl: '', noticeStamps: [] });
   saveStore({ token: null });
   renderAuth();
   if (!silent) toast('로그아웃했어요.');
@@ -477,8 +481,8 @@ async function renderAuth(mode) {
 /* =========================================================
  * 메인 화면 (상단바 + 하단 탭)
  * ======================================================= */
-const TABS_STUDENT = [['lessons', '수업', 'book'], ['booking', '보충예약', 'cal'], ['qna', '질문', 'chat'], ['me', '내 정보', 'user']];
-const TABS_ADMIN = [['lessons', '수업', 'book'], ['booking', '보충현황', 'cal'], ['qna', '질문답변', 'chat'], ['admin', '관리', 'gear']];
+const TABS_STUDENT = [['lessons', '수업', 'book'], ['notice', '공지', 'bell'], ['booking', '보충예약', 'cal'], ['qna', '질문', 'chat'], ['me', '내 정보', 'user']];
+const TABS_ADMIN = [['lessons', '수업', 'book'], ['notice', '공지', 'bell'], ['booking', '보충현황', 'cal'], ['qna', '질문답변', 'chat'], ['admin', '관리', 'gear']];
 
 function renderMain() {
   const app = clear($('#app'));
@@ -492,10 +496,11 @@ function renderMain() {
   tabs.forEach(([key, label, ic]) => {
     inner.append(el('button', { class: S.tab === key ? 'on' : '', 'data-tab': key, onclick: () => { S.tab = key; renderMain(); window.scrollTo(0, 0); } },
       icon(ic), label,
-      key === 'qna' && isAdmin() && S.unanswered ? el('span', { class: 'dot' }, S.unanswered) : null));
+      key === 'qna' && isAdmin() && S.unanswered ? el('span', { class: 'dot' }, S.unanswered) : null,
+      key === 'notice' && !isAdmin() && unreadNotices().length ? el('span', { class: 'dot' }, unreadNotices().length) : null));
   });
   app.append(el('nav', { class: 'nav' }, inner));
-  ({ lessons: viewLessons, booking: viewBooking, qna: viewQna, me: viewMe, admin: viewAdmin })[S.tab]($('#view'));
+  ({ lessons: viewLessons, notice: viewNotices, booking: viewBooking, qna: viewQna, me: viewMe, admin: viewAdmin })[S.tab]($('#view'));
 }
 
 function subjectChips(onChange) {
@@ -585,6 +590,99 @@ function lessonForm(l, refresh) {
     await call('lessonSave', { id: l.id, subjectId: subj.value, week: week.value, title: title.value, content: content.value, videos: videos.value, homework: hw.value });
     close(); toast('저장했어요.');
     S.subjectId = subj.value; saveStore({ subjectId: subj.value });
+    refresh();
+  }));
+}
+
+/* =========================================================
+ * 반별 공지 탭
+ * ======================================================= */
+function seenKey() { return 'seenNotices_' + (S.me ? S.me.id : ''); }
+function seenNotices() { const v = loadStore()[seenKey()]; return Array.isArray(v) ? v : []; }
+function unreadNotices(subjectId) {
+  const seen = seenNotices();
+  return S.noticeStamps.filter(n => seen.indexOf(n.id) < 0 && (!subjectId || !n.subjectId || n.subjectId === subjectId));
+}
+function markNoticesSeen(ids) {
+  const seen = seenNotices();
+  ids.forEach(id => { if (seen.indexOf(id) < 0) seen.push(id); });
+  saveStore({ [seenKey()]: seen.slice(-500) });
+  const dot = document.querySelector('nav [data-tab=notice] .dot');
+  const left = unreadNotices().length;
+  if (dot) { if (left) dot.textContent = left; else dot.remove(); }
+}
+
+async function viewNotices(view) {
+  clear(view);
+  const subs = visibleSubjects();
+  const chips = subjectChips(() => viewNotices(view));
+  // 반 칩에 새 공지 개수 표시 (학생)
+  if (!isAdmin()) chips.querySelectorAll('.chip').forEach((c, i) => {
+    const n = subs[i] ? unreadNotices(subs[i].id).filter(x => x.subjectId).length : 0;
+    if (n) c.append(el('span', { class: 'badge wait', style: 'margin-left:6px;padding:0 6px' }, n));
+  });
+  view.append(chips);
+  if (!S.subjectId) return;
+  if (isAdmin()) view.append(el('button', { class: 'btn ghost block', style: 'margin-bottom:12px', onclick: () => noticeForm(null, () => viewNotices(view)) }, '+ 공지 쓰기'));
+  const box = el('div', null, loader());
+  view.append(box);
+  let list;
+  try { list = await call('noticesList', { subjectId: S.subjectId }); }
+  catch (e) { clear(box).append(emptyState('⚠️', e.message)); return; }
+  clear(box);
+  if (!list.length) { box.append(emptyState('📢', '아직 이 반의 공지가 없어요.')); return; }
+  const seen = seenNotices();
+  list.forEach(n => box.append(noticeCard(n, !isAdmin() && seen.indexOf(n.id) < 0, () => viewNotices(view))));
+  if (!isAdmin()) {
+    markNoticesSeen(list.map(n => n.id));
+    const on = chips.querySelector('.chip.on .badge');
+    if (on) on.remove();
+  }
+}
+
+function noticeCard(n, isNew, refresh) {
+  const card = el('div', { class: 'card notice-card' + (n.pinned ? ' pinned' : '') },
+    el('div', { class: 'meta row wrap', style: 'gap:6px;margin-bottom:6px' },
+      n.pinned ? el('span', { class: 'badge pri' }, '📌 고정') : null,
+      !n.subjectId ? el('span', { class: 'badge mine' }, '전체 공지') : null,
+      isNew ? el('span', { class: 'badge wait' }, 'NEW') : null,
+      el('span', { class: 'small muted', style: 'margin-left:auto' }, shortDate(n.createdAt))),
+    el('h3', null, n.title),
+    n.content ? richText(n.content) : null);
+  if (isAdmin()) {
+    card.append(el('div', { class: 'admin-bar' },
+      el('span', { class: 'small muted grow' }, n.updatedAt !== n.createdAt ? '수정 ' + shortDate(n.updatedAt) : ''),
+      el('button', { class: 'btn line sm', onclick: () => noticeForm(n, refresh) }, '수정'),
+      el('button', { class: 'btn danger sm', onclick: async e => {
+        if (!(await confirmSheet('공지를 삭제할까요?', n.title, '삭제', true))) return;
+        await busy(e.target, () => call('noticeDelete', { id: n.id }));
+        toast('삭제했어요.'); refresh();
+      } }, '삭제')));
+  }
+  return card;
+}
+
+function noticeForm(n, refresh) {
+  n = n || {};
+  const target = el('select', { class: 'input' },
+    el('option', { value: '' }, '전체 (모든 반)'),
+    S.subjects.map(s => el('option', { value: s.id }, s.name)));
+  target.value = n.id ? (n.subjectId || '') : S.subjectId;
+  const title = input({ placeholder: '예: 다음 주 월요일 휴강 안내', maxlength: 100, value: n.title || '' });
+  const content = textarea({ placeholder: '공지 내용', value: n.content || '' });
+  const pinned = el('input', { type: 'checkbox', style: 'width:20px;height:20px' });
+  pinned.checked = !!n.pinned;
+  const ok = el('button', { class: 'btn' }, n.id ? '수정 저장' : '올리기');
+  const close = openSheet(n.id ? '공지 수정' : '공지 쓰기', el('div', null,
+    field('대상 반', target, '"전체"로 올리면 모든 반 학생에게 보여요.'),
+    field('제목', title),
+    field('내용', content),
+    el('label', { class: 'row', style: 'gap:10px;margin-bottom:14px;font-weight:600' }, pinned, '맨 위에 고정')),
+    [el('button', { class: 'btn line', onclick: () => close() }, '닫기'), ok]);
+  ok.addEventListener('click', () => busy(ok, async () => {
+    await call('noticeSave', { id: n.id, subjectId: target.value, title: title.value, content: content.value, pinned: pinned.checked });
+    close(); toast('공지를 저장했어요.');
+    if (target.value) { S.subjectId = target.value; saveStore({ subjectId: target.value }); }
     refresh();
   }));
 }
