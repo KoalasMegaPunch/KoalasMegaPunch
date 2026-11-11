@@ -20,6 +20,7 @@ const { startServer } = require('./server');
     videos: '3강 개념 정리 | https://youtu.be/abc123\n3강 문제풀이 | https://youtu.be/def456',
     homework: '교재 p.32~35 전 문항\n오답노트 3문제 이상',
   });
+  g.ss.getSheetByName('설정').data.forEach(r => { if (r[0] === 'Zoom 링크') r[1] = 'https://zoom.us/j/1234567890'; if (r[0] === 'Zoom 안내') r[1] = '회의 ID 123 456 7890 · 암호 physics'; });
   g.api('noticeSave', admin, { subjectId: '', title: '기말고사 대비 특강 일정', content: '12/20(토) 오후 2시, 전 반 공통입니다.', pinned: true });
   g.api('noticeSave', admin, { subjectId: subs[0].id, title: '다음 주 월요일 휴강', content: '보강은 금요일 수업 뒤에 30분 진행해요.' });
 
@@ -73,7 +74,7 @@ const { startServer } = require('./server');
 
   // --- Me
   await page.locator('nav [data-tab=me]').click();
-  await page.getByText('다가오는 보충수업').waitFor();
+  await page.getByText('다가오는 Zoom Clinic').waitFor();
   await shot(page, '07-me');
   await page.getByRole('button', { name: '로그아웃' }).click();
 
@@ -126,8 +127,8 @@ const { startServer } = require('./server');
   await page.getByText('선생님 답변').waitFor();
   await shot(page, '11-student-answer');
 
-  const timetable = g.ss.getSheetByName('보충시간표').data.map(r => r.join(' | ')).join('\n');
-  console.log('--- 보충시간표 sheet ---\n' + timetable);
+  const timetable = g.ss.getSheetByName('Zoom Clinic 시간표').data.map(r => r.join(' | ')).join('\n');
+  console.log('--- Zoom Clinic 시간표 sheet ---\n' + timetable);
   await browser.close();
   server.close();
   if (errors.length) { console.log('ERRORS:\n' + errors.join('\n')); process.exit(1); }

@@ -19,7 +19,7 @@ g.setup();
 const adminPw = g.settings_().adminPassword;
 
 t('setup creates all sheets and default subjects', () => {
-  ['설정', '학생', '과목', '수업', '보충예약', '질문', 'FAQ', '보충시간표'].forEach(n => assert(g.ss.getSheetByName(n), n));
+  ['설정', '학생', '과목', '수업', 'Zoom Clinic 예약', '질문', 'FAQ', 'Zoom Clinic 시간표'].forEach(n => assert(g.ss.getSheetByName(n), n));
   assert.strictEqual(adminPw.length, 8);
 });
 
@@ -101,14 +101,14 @@ t('booking: slots, book, capacity, cancel, timetable', () => {
   assert.strictEqual(adm.people[0].name, '홍길동');
   assert.strictEqual(adm.people[0].phone, '010-1234-5678');
 
-  const tt = g.ss.getSheetByName('보충시간표').data;
+  const tt = g.ss.getSheetByName('Zoom Clinic 시간표').data;
   const flat = tt.map(r => r.join(' | ')).join('\n');
   assert(flat.includes('홍길동 (뉴턴짱)'), 'timetable sheet lists the booking:\n' + flat);
   assert(flat.includes('20:00~21:00'));
 
   throws(() => g.api('bookingCancel', s2.token, { id: mine.mine }), /내 예약만/);
   g.api('bookingCancel', s1.token, { id: mine.mine });
-  assert(!g.ss.getSheetByName('보충시간표').data.map(r => r.join('|')).join('\n').includes('홍길동'));
+  assert(!g.ss.getSheetByName('Zoom Clinic 시간표').data.map(r => r.join('|')).join('\n').includes('홍길동'));
 });
 
 t('booking: capacity setting and weekly max', () => {
@@ -120,7 +120,7 @@ t('booking: capacity setting and weekly max', () => {
   throws(() => g.api('bookingBook', s1.token, { date: day.date, hour: 22 }), /최대 1시간/);
   setSetting('1인 주당 최대 신청(시간)', '0');
   g.api('bookingBook', s1.token, { date: day.date, hour: 22 });
-  const tt = g.ss.getSheetByName('보충시간표').data.map(r => r.join(' | ')).join('\n');
+  const tt = g.ss.getSheetByName('Zoom Clinic 시간표').data.map(r => r.join(' | ')).join('\n');
   assert(tt.includes('홍길동 (뉴턴짱)\n김철수 (einstein)') || tt.includes('김철수 (einstein)\n홍길동 (뉴턴짱)'), tt);
   assert.strictEqual(g.api('myInfo', s1.token).bookings.length, 2);
   setSetting('시간당 정원', '1');
@@ -202,7 +202,7 @@ t('student delete removes future bookings', () => {
   const sid = g.api('studentsList', admin).find(u => u.nickname === '뉴턴짱').id;
   g.api('studentDelete', admin, { id: sid });
   throws(() => g.api('bootstrap', s1.token), /AUTH_REQUIRED/);
-  assert(!g.ss.getSheetByName('보충예약').data.some(r => r[4] === '뉴턴짱'));
+  assert(!g.ss.getSheetByName('Zoom Clinic 예약').data.some(r => r[4] === '뉴턴짱'));
   assert.strictEqual(g.api('studentsList', admin).length, 1);
 });
 
@@ -210,6 +210,37 @@ t('notification emails when configured', () => {
   setSetting('알림 받을 이메일', 'teacher@example.com');
   g.api('questionCreate', s2.token, { subjectId: subjects[0].id, title: '메일 테스트', content: '내용' });
   assert(g.mails.some(m => m.subject.includes('메일 테스트')));
+});
+
+t('zoom link only for students with a booking', () => {
+  setSetting('Zoom 링크', 'https://zoom.us/j/123');
+  setSetting('Zoom 안내', '암호 0000');
+  const day = g.api('bookingSlots', s2.token).days.find(x => x.slots.every(s => s.open));
+  g.api('bookingBook', s2.token, { date: day.date, hour: 19 });
+  assert.strictEqual(g.api('bookingSlots', s2.token).zoomUrl, 'https://zoom.us/j/123');
+  assert.strictEqual(g.api('myInfo', s2.token).zoomInfo, '암호 0000');
+  const s3 = g.api('signup', null, { nickname: 'nobook', name: '박영희', phone: '01033334444', password: '1234' });
+  assert(!('zoomUrl' in g.api('bookingSlots', s3.token)), 'no booking → no zoom link');
+  assert(!('zoomUrl' in g.api('myInfo', s3.token)));
+  assert.strictEqual(g.api('bookingSlots', admin).zoomUrl, 'https://zoom.us/j/123');
+});
+
+t('migrates old 보충 sheets and settings from the previous version', () => {
+  const old = createGas();
+  const ss = old.ss;
+  const set = ss.insertSheet('설정');
+  set.data = [['항목', '값', '설명'], ['앱 이름', '옛 앱', ''], ['선생님 비밀번호', 'pw', ''], ['보충 요일', '토', ''], ['보충 시작 시각', '20', ''], ['보충 종료 시각', '22', '']];
+  const bk = ss.insertSheet('보충예약');
+  bk.data = [['id', '날짜', '시작시각', '학생id', '닉네임', '이름', '전화번호', '메모', '신청일시'], ['b1', '2026-11-14', '20', 'u1', '옛학생', '이순신', '010-1111-2222', '', '2026-11-10 10:00']];
+  ss.insertSheet('보충시간표');
+  old.refreshTimetable();
+  assert(ss.getSheetByName('Zoom Clinic 예약') && !ss.getSheetByName('보충예약'), 'bookings sheet renamed');
+  assert(ss.getSheetByName('Zoom Clinic 시간표') && !ss.getSheetByName('보충시간표'), 'timetable renamed');
+  const labels = set.data.map(r => r[0]);
+  assert(labels.includes('Clinic 요일') && !labels.includes('보충 요일'), labels.join(','));
+  assert(labels.includes('Zoom 링크'), 'new setting appended');
+  const tt = ss.getSheetByName('Zoom Clinic 시간표').data.map(r => r.join('|')).join('\n');
+  assert(tt.includes('이순신 (옛학생)') && tt.includes('20:00~21:00') && !tt.includes('19:00'), tt);
 });
 
 console.log(failures ? `\n${failures} test(s) failed` : '\nAll tests passed');

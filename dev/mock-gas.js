@@ -18,6 +18,7 @@ function chainable(target) {
 class MockSheet {
   constructor(name) { this.name = name; this.data = []; }
   getName() { return this.name; }
+  setName(n) { this.name = n; return this; }
   getMaxRows() { return Math.max(1000, this.data.length); }
   getLastRow() {
     for (let r = this.data.length - 1; r >= 0; r--) {

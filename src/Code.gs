@@ -2,7 +2,7 @@
  * 학생용 클래스 앱 — Google Apps Script 백엔드
  *
  * 모든 데이터는 이 스크립트가 연결된 구글 스프레드시트에 저장됩니다.
- *   설정 / 학생 / 과목 / 수업 / 보충예약 / 보충시간표 / 질문 / FAQ 시트
+ *   설정 / 학생 / 과목 / 수업 / 공지 / Zoom Clinic 예약 / Zoom Clinic 시간표 / 질문 / FAQ 시트
  * 학생은 스프레드시트를 볼 수 없고, 앱(웹앱)을 통해서만 데이터에 접근합니다.
  * 학생의 이름·전화번호는 선생님(마스터 계정)에게만 전달됩니다.
  */
@@ -10,7 +10,8 @@
 const TZ = 'Asia/Seoul';
 const TOKEN_DAYS = 60;              // 로그인 유지 기간(일)
 const SHOW_ASKER_TO_TEACHER = false; // true로 바꾸면 선생님 화면에서만 질문 작성자 닉네임이 보입니다.
-const TIMETABLE_SHEET = '보충시간표';
+const TIMETABLE_SHEET = 'Zoom Clinic 시간표';
+const LEGACY_TIMETABLE_SHEET = '보충시간표'; // 이전 버전 이름
 const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 
 const SHEET_DEFS = {
@@ -30,7 +31,8 @@ const SHEET_DEFS = {
     headers: ['id', '과목id', '주차(월요일 날짜)', '제목', '수업내용', '영상링크(줄마다 제목|URL)', '숙제', '수정일시'],
   },
   bookings: {
-    name: '보충예약',
+    name: 'Zoom Clinic 예약',
+    legacyName: '보충예약',
     fields: ['id', 'date', 'hour', 'userId', 'nickname', 'name', 'phone', 'memo', 'createdAt'],
     headers: ['id', '날짜', '시작시각', '학생id', '닉네임', '이름', '전화번호', '메모', '신청일시'],
   },
@@ -60,14 +62,16 @@ const SETTING_DEFS = [
   ['appName', '앱 이름', '물리학 클래스', '앱 상단과 브라우저 탭에 표시되는 이름'],
   ['adminPassword', '선생님 비밀번호', '', '선생님(마스터) 로그인 비밀번호. 처음 만들 때 무작위로 정해지니 꼭 바꾸세요.'],
   ['notice', '공지사항', '', '수업 탭 맨 위에 보이는 공지 (비워두면 숨김)'],
-  ['bookingDays', '보충 요일', '토,일', '쉼표로 구분 (예: 토,일)'],
-  ['bookingStart', '보충 시작 시각', '19', '0~23 (19 = 저녁 7시)'],
-  ['bookingEnd', '보충 종료 시각', '24', '1~24 (24 = 자정). 마지막 수업이 이 시각에 끝남'],
+  ['zoomUrl', 'Zoom 링크', '', 'Zoom Clinic 입장 주소 (예약한 학생에게만 "Zoom 입장" 버튼으로 보임)'],
+  ['zoomInfo', 'Zoom 안내', '', '회의 ID·암호 등 함께 보여줄 안내 (예약한 학생에게만 보임)'],
+  ['bookingDays', 'Clinic 요일', '토,일', '쉼표로 구분 (예: 토,일)', '보충 요일'],
+  ['bookingStart', 'Clinic 시작 시각', '19', '0~23 (19 = 저녁 7시)', '보충 시작 시각'],
+  ['bookingEnd', 'Clinic 종료 시각', '24', '1~24 (24 = 자정). 마지막 Clinic이 이 시각에 끝남', '보충 종료 시각'],
   ['slotCapacity', '시간당 정원', '1', '한 시간에 받을 수 있는 학생 수'],
   ['bookingWeeks', '예약 오픈 주수', '2', '이번 주를 포함해 몇 주 뒤까지 신청을 받을지'],
   ['maxPerWeek', '1인 주당 최대 신청(시간)', '0', '0이면 제한 없음'],
   ['cutoffHours', '신청·취소 마감(시작 N시간 전)', '1', '0이면 수업 시작 직전까지 가능'],
-  ['notifyEmail', '알림 받을 이메일', '', '적어두면 보충 신청/취소, 새 질문이 생길 때 메일로 알려줌'],
+  ['notifyEmail', '알림 받을 이메일', '', '적어두면 Zoom Clinic 신청/취소, 새 질문이 생길 때 메일로 알려줌'],
 ];
 
 const DEFAULT_SUBJECTS = ['겨울특강 물리학 개념(월금)', '겨울특강 물리학 심화(화목)'];
@@ -91,7 +95,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('학생앱')
     .addItem('초기 설정 (시트 만들기)', 'setup')
-    .addItem('보충 시간표 새로고침', 'refreshTimetable')
+    .addItem('Zoom Clinic 시간표 새로고침', 'refreshTimetable')
     .addToUi();
 }
 
@@ -240,7 +244,7 @@ function myInfo_(p, ctx) {
     .filter(b => b.userId === u.id && b.date >= today)
     .sort(byDateHour_)
     .map(b => ({ id: b.id, date: b.date, hour: +b.hour, label: dateLabel_(b.date) + ' ' + hourLabel_(+b.hour), memo: b.memo }));
-  return { nickname: u.nickname, name: u.name, phone: u.phone, createdAt: u.createdAt, bookings };
+  return Object.assign({ nickname: u.nickname, name: u.name, phone: u.phone, createdAt: u.createdAt, bookings }, bookings.length ? zoom_() : {});
 }
 
 function changePassword_(p, ctx) {
@@ -277,7 +281,7 @@ function studentDelete_(p) {
   const u = rows_('users').find(x => x.id === p.id);
   if (!u) throw new Error('학생을 찾을 수 없어요.');
   const today = todayStr_();
-  // 앞으로 있을 보충 예약은 함께 취소
+  // 앞으로 있을 Zoom Clinic 예약은 함께 취소
   rows_('bookings').filter(b => b.userId === u.id && b.date >= today).reverse().forEach(b => remove_('bookings', b));
   remove_('users', u);
   rebuildTimetable_();
@@ -393,7 +397,7 @@ function parseVideos_(raw) {
 }
 
 /* =========================================================
- * 보충수업 예약
+ * Zoom Clinic 예약 (토·일 저녁 1시간 단위 개인 클리닉)
  * ======================================================= */
 
 function bookingConfig_() {
@@ -456,11 +460,19 @@ function bookingSlots_(p, ctx) {
     rule: cfg.days.map(d => DAY_NAMES[d]).join('·') + ' ' + cfg.start + '~' + cfg.end + '시',
   };
   if (isAdmin) out.sheetUrl = SpreadsheetApp.getActiveSpreadsheet().getUrl();
+  const hasMine = days.some(d => d.slots.some(sl => sl.mine));
+  if (isAdmin || hasMine) Object.assign(out, zoom_());
   return out;
 }
 
+/** Zoom 입장 정보 — 선생님과, 예약이 있는 학생에게만 내려줍니다. */
+function zoom_() {
+  const s = settings_();
+  return { zoomUrl: /^https?:\/\//i.test(s.zoomUrl) ? s.zoomUrl : '', zoomInfo: s.zoomInfo };
+}
+
 function bookingBook_(p, ctx) {
-  if (ctx.role === 'admin') throw new Error('보충 신청은 학생 계정으로 해 주세요.');
+  if (ctx.role === 'admin') throw new Error('Zoom Clinic 신청은 학생 계정으로 해 주세요.');
   const cfg = bookingConfig_();
   const date = String(p.date || '');
   const hour = parseInt(p.hour, 10);
@@ -483,8 +495,8 @@ function bookingBook_(p, ctx) {
   };
   insert_('bookings', b);
   rebuildTimetable_();
-  notify_('[보충 신청] ' + dateLabel_(date) + ' ' + hourLabel_(hour) + ' - ' + u.name,
-    u.name + '(' + u.nickname + ', ' + u.phone + ') 학생이 보충수업을 신청했어요.\n\n' +
+  notify_('[Zoom Clinic 신청] ' + dateLabel_(date) + ' ' + hourLabel_(hour) + ' - ' + u.name,
+    u.name + '(' + u.nickname + ', ' + u.phone + ') 학생이 Zoom Clinic을 신청했어요.\n\n' +
     '일시: ' + dateLabel_(date) + ' ' + hourLabel_(hour) + (b.memo ? '\n메모: ' + b.memo : ''));
   return true;
 }
@@ -499,17 +511,20 @@ function bookingCancel_(p, ctx) {
   }
   remove_('bookings', b);
   rebuildTimetable_();
-  notify_('[보충 취소] ' + dateLabel_(b.date) + ' ' + hourLabel_(+b.hour) + ' - ' + b.name,
-    b.name + '(' + b.nickname + ') 학생의 보충수업이 ' + (isAdmin ? '선생님에 의해 ' : '') + '취소되었어요.\n\n' +
+  notify_('[Zoom Clinic 취소] ' + dateLabel_(b.date) + ' ' + hourLabel_(+b.hour) + ' - ' + b.name,
+    b.name + '(' + b.nickname + ') 학생의 Zoom Clinic이 ' + (isAdmin ? '선생님에 의해 ' : '') + '취소되었어요.\n\n' +
     '일시: ' + dateLabel_(b.date) + ' ' + hourLabel_(+b.hour));
   return true;
 }
 
-/** [보충시간표] 시트를 시간표 모양으로 다시 그립니다. (이번 주부터) */
+/** [Zoom Clinic 시간표] 시트를 시간표 모양으로 다시 그립니다. (이번 주부터) */
 function rebuildTimetable_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sh = ss.getSheetByName(TIMETABLE_SHEET);
-  if (!sh) sh = ss.insertSheet(TIMETABLE_SHEET, 0);
+  if (!sh) {
+    sh = ss.getSheetByName(LEGACY_TIMETABLE_SHEET);
+    if (sh) sh.setName(TIMETABLE_SHEET); else sh = ss.insertSheet(TIMETABLE_SHEET, 0);
+  }
   sh.clear();
 
   const cfg = bookingConfig_();
@@ -538,7 +553,7 @@ function rebuildTimetable_() {
     bgs.push(bg);
   }
 
-  sh.getRange(1, 1).setValue('보충수업 시간표  (자동 생성 · 마지막 갱신 ' + nowStr_() + ')').setFontWeight('bold').setFontSize(13);
+  sh.getRange(1, 1).setValue('Zoom Clinic 시간표  (자동 생성 · 마지막 갱신 ' + nowStr_() + ')').setFontWeight('bold').setFontSize(13);
   if (cols < 2) return;
   sh.getRange(2, 1, 1, cols).setValues([header]).setFontWeight('bold').setBackground('#4f46e5').setFontColor('#ffffff').setHorizontalAlignment('center');
   if (body.length) {
@@ -547,7 +562,7 @@ function rebuildTimetable_() {
     r.setBorder(true, true, true, true, true, true, '#d1d5db', SpreadsheetApp.BorderStyle.SOLID);
     sh.getRange(3, 1, body.length, 1).setFontWeight('bold');
   }
-  sh.getRange(body.length + 4, 1).setValue('※ 이 시트는 예약이 바뀔 때마다 자동으로 다시 만들어져요. 직접 고친 내용은 사라집니다. 전체 기록(전화번호 포함)은 [보충예약] 시트에 있어요.').setFontColor('#6b7280');
+  sh.getRange(body.length + 4, 1).setValue('※ 이 시트는 예약이 바뀔 때마다 자동으로 다시 만들어져요. 직접 고친 내용은 사라집니다. 전체 기록(전화번호 포함)은 [Zoom Clinic 예약] 시트에 있어요.').setFontColor('#6b7280');
   sh.setFrozenRows(2);
   sh.setFrozenColumns(1);
   sh.setColumnWidth(1, 110);
@@ -768,13 +783,35 @@ function settings_() {
   if (_mem.settings) return _mem.settings;
   const sh = sheet_('settings');
   const byLabel = {};
+  const rowOf = {};
   const last = sh.getLastRow();
-  if (last >= 2) sh.getRange(2, 1, last - 1, 2).getValues().forEach(r => { byLabel[String(r[0]).trim()] = r[1]; });
+  if (last >= 2) {
+    sh.getRange(2, 1, last - 1, 2).getValues().forEach((r, i) => {
+      const label = String(r[0]).trim();
+      byLabel[label] = r[1];
+      rowOf[label] = i + 2;
+    });
+  }
   const out = {};
+  const missing = [];
   SETTING_DEFS.forEach(d => {
+    if (!(d[1] in byLabel)) {
+      const legacy = d[4];
+      if (legacy && legacy in byLabel) {
+        // 이전 버전 항목명(예: 보충 요일) → 새 이름으로 바꾸고 값은 그대로 사용
+        sh.getRange(rowOf[legacy], 1, 1, 3).setValues([[d[1], String(byLabel[legacy]), d[3]]]);
+        byLabel[d[1]] = byLabel[legacy];
+      } else {
+        byLabel[d[1]] = d[2];
+        missing.push([d[1], d[2], d[3]]); // 새 버전에서 추가된 항목은 시트 맨 아래에 추가
+      }
+    }
     const v = byLabel[d[1]];
     out[d[0]] = v === undefined || v === null ? '' : String(v).trim();
   });
+  if (missing.length && last >= 2) {
+    sh.getRange(last + 1, 1, missing.length, 3).setNumberFormat('@').setValues(missing);
+  }
   _mem.settings = out;
   return out;
 }
@@ -804,6 +841,10 @@ function sheet_(key) {
   const def = SHEET_DEFS[key];
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sh = ss.getSheetByName(def.name);
+  if (!sh && def.legacyName) {
+    sh = ss.getSheetByName(def.legacyName); // 이전 버전 시트가 있으면 이름만 바꿔서 그대로 사용
+    if (sh) sh.setName(def.name);
+  }
   if (!sh) {
     sh = ss.insertSheet(def.name);
     const n = def.headers.length;
