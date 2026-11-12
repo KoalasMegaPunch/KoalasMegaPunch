@@ -17,6 +17,7 @@ function setSetting(label, value) {
 
 g.setup();
 const adminPw = g.settings_().adminPassword;
+const CLS = g.api('publicInfo').classes; // [개념, 심화]
 
 t('setup creates all sheets and default subjects', () => {
   ['설정', '학생', '과목', '수업', 'Zoom Clinic 예약', '질문', 'FAQ', 'Zoom Clinic 시간표'].forEach(n => assert(g.ss.getSheetByName(n), n));
@@ -29,10 +30,12 @@ t('signup validates input', () => {
   throws(() => g.api('signup', null, { nickname: '선생님', name: '홍길동', phone: '01012345678', password: '1234' }), /쓸 수 없는/);
   throws(() => g.api('signup', null, { nickname: '뉴턴', name: '홍길동', phone: '1234', password: '1234' }), /휴대폰/);
   throws(() => g.api('signup', null, { nickname: '뉴턴', name: '홍길동', phone: '01012345678', password: '12' }), /비밀번호/);
+  throws(() => g.api('signup', null, { nickname: '뉴턴', name: '홍길동', phone: '01012345678', password: '1234' }), /반을/);
+  throws(() => g.api('signup', null, { nickname: '뉴턴', name: '홍길동', phone: '01012345678', password: '1234', classIds: ['nope'] }), /반을/);
 });
 t('signup + login works, phone keeps leading zero', () => {
-  s1 = g.api('signup', null, { nickname: '뉴턴짱', name: '홍길동', phone: '010 1234 5678', password: 'abcd' });
-  s2 = g.api('signup', null, { nickname: 'einstein', name: '김철수', phone: '010-9999-0000', password: 'pass1' });
+  s1 = g.api('signup', null, { nickname: '뉴턴짱', name: '홍길동', phone: '010 1234 5678', password: 'abcd', classIds: [CLS[0].id, CLS[1].id] });
+  s2 = g.api('signup', null, { nickname: 'einstein', name: '김철수', phone: '010-9999-0000', password: 'pass1', classIds: [CLS[0].id] });
   assert.strictEqual(g.ss.getSheetByName('학생').data[1][3], '010-1234-5678');
   throws(() => g.api('signup', null, { nickname: 'EINSTEIN', name: '다른', phone: '01011112222', password: '1234' }), /이미 사용/);
   throws(() => g.api('login', null, { nickname: '뉴턴짱', password: 'wrong' }), /맞지 않아요/);
@@ -121,7 +124,8 @@ t('booking: capacity setting and weekly max', () => {
   setSetting('1인 주당 최대 신청(시간)', '0');
   g.api('bookingBook', s1.token, { date: day.date, hour: 22 });
   const tt = g.ss.getSheetByName('Zoom Clinic 시간표').data.map(r => r.join(' | ')).join('\n');
-  assert(tt.includes('홍길동 (뉴턴짱)\n김철수 (einstein)') || tt.includes('김철수 (einstein)\n홍길동 (뉴턴짱)'), tt);
+  const row21 = tt.split('\n21:00~22:00')[1].split('\n22:00~23:00')[0];
+  assert(row21.includes('홍길동 (뉴턴짱)') && row21.includes('김철수 (einstein)'), tt);
   assert.strictEqual(g.api('myInfo', s1.token).bookings.length, 2);
   setSetting('시간당 정원', '1');
 });
@@ -159,7 +163,7 @@ t('questions: anonymous, answer, faq', () => {
   g.api('faqSave', admin, { subjectId: subjects[0].id, question: '숙제는 어디에 내요?', answer: '수업 시작 전에 걷어요.' });
   const faq = g.api('faqList', s2.token, { subjectId: subjects[0].id });
   assert.deepStrictEqual(faq.map(f => f.question.split('\n')[0]), ['관성이 뭐예요?', '숙제는 어디에 내요?']);
-  assert.strictEqual(g.api('faqList', s2.token, { subjectId: subjects[1].id }).length, 0, 'per-subject');
+  assert.strictEqual(g.api('faqList', s1.token, { subjectId: subjects[1].id }).length, 0, 'per-subject');
   assert(g.api('questionsList', admin, { subjectId: subjects[0].id }).find(q => q.id === q1.id).inFaq);
 });
 
@@ -219,7 +223,7 @@ t('zoom link only for students with a booking', () => {
   g.api('bookingBook', s2.token, { date: day.date, hour: 19 });
   assert.strictEqual(g.api('bookingSlots', s2.token).zoomUrl, 'https://zoom.us/j/123');
   assert.strictEqual(g.api('myInfo', s2.token).zoomInfo, '암호 0000');
-  const s3 = g.api('signup', null, { nickname: 'nobook', name: '박영희', phone: '01033334444', password: '1234' });
+  const s3 = g.api('signup', null, { nickname: 'nobook', name: '박영희', phone: '01033334444', password: '1234', classIds: [CLS[1].id] });
   assert(!('zoomUrl' in g.api('bookingSlots', s3.token)), 'no booking → no zoom link');
   assert(!('zoomUrl' in g.api('myInfo', s3.token)));
   assert.strictEqual(g.api('bookingSlots', admin).zoomUrl, 'https://zoom.us/j/123');
@@ -241,6 +245,66 @@ t('migrates old 보충 sheets and settings from the previous version', () => {
   assert(labels.includes('Zoom 링크'), 'new setting appended');
   const tt = ss.getSheetByName('Zoom Clinic 시간표').data.map(r => r.join('|')).join('\n');
   assert(tt.includes('이순신 (옛학생)') && tt.includes('20:00~21:00') && !tt.includes('19:00'), tt);
+});
+
+t('classes: students only see and use their own class', () => {
+  const s4 = g.api('signup', null, { nickname: '심화만', name: '최심화', phone: '01055556666', password: '1234', classIds: [CLS[1].id] });
+  const subs = g.api('bootstrap', s4.token).subjects;
+  assert.deepStrictEqual(subs.map(x => x.id), [CLS[1].id]);
+  assert.deepStrictEqual(g.api('bootstrap', s4.token).me.classIds, [CLS[1].id]);
+  throws(() => g.api('lessonsList', s4.token, { subjectId: CLS[0].id }), /내 반/);
+  throws(() => g.api('noticesList', s4.token, { subjectId: CLS[0].id }), /내 반/);
+  throws(() => g.api('questionsList', s4.token, { subjectId: CLS[0].id }), /내 반/);
+  throws(() => g.api('faqList', s4.token, { subjectId: CLS[0].id }), /내 반/);
+  throws(() => g.api('questionCreate', s4.token, { subjectId: CLS[0].id, title: 'x', content: 'y' }), /내 반/);
+  g.api('lessonsList', s4.token, { subjectId: CLS[1].id });
+  g.api('noticeSave', admin, { subjectId: CLS[0].id, title: '개념반 전용', content: '' });
+  g.api('noticeSave', admin, { subjectId: '', title: '모두에게', content: '' });
+  const titles = g.api('noticesList', s4.token, { subjectId: CLS[1].id }).map(n => n.title);
+  assert(titles.includes('모두에게') && !titles.includes('개념반 전용'));
+  throws(() => g.api('studentSetClasses', s4.token, { id: 'x', classIds: [] }), /선생님만/);
+  const id = g.api('studentsList', admin).find(u => u.nickname === '심화만').id;
+  g.api('studentSetClasses', admin, { id, classIds: [CLS[0].id, CLS[1].id] });
+  assert.strictEqual(g.api('bootstrap', s4.token).subjects.length, 2);
+  assert.deepStrictEqual(g.api('studentsList', admin).find(u => u.id === id).classIds, [CLS[0].id, CLS[1].id]);
+  throws(() => g.api('setMyClasses', s4.token, { classIds: [CLS[0].id] }), /선생님께/);
+});
+
+t('clinic slots are shared across classes; teacher sees class + phone', () => {
+  const day = g.api('bookingSlots', s2.token).days.find(x => x.slots.every(s => s.open));
+  const s5 = g.api('signup', null, { nickname: '심화5', name: '정심화', phone: '01077778888', password: '1234', classIds: [CLS[1].id] });
+  g.api('bookingBook', s5.token, { date: day.date, hour: 23 });
+  throws(() => g.api('bookingBook', s2.token, { date: day.date, hour: 23 }), /먼저 신청/);
+  const other = g.api('bookingSlots', s2.token).days.find(x => x.date === day.date).slots.find(x => x.hour === 23);
+  assert(other.count === 1 && !other.mine && !other.people);
+  const adm = g.api('bookingSlots', admin).days.find(x => x.date === day.date).slots.find(x => x.hour === 23).people[0];
+  assert.strictEqual(adm.className, CLS[1].name);
+  assert.strictEqual(adm.phone, '010-7777-8888');
+  const tt = g.ss.getSheetByName('Zoom Clinic 시간표').data.map(r => r.join(' | ')).join('\n');
+  assert(tt.includes('[' + CLS[1].name + ']\n정심화 (심화5)\n010-7777-8888'), tt);
+  assert.strictEqual(g.ss.getSheetByName('Zoom Clinic 예약').data[0][9], '반');
+});
+
+t('old students without a class pick one once; old app name migrates', () => {
+  const g2 = createGas();
+  g2.setup();
+  const set = g2.ss.getSheetByName('설정');
+  set.data.forEach(r => { if (r[0] === '앱 이름') r[1] = '물리학 클래스'; });
+  const cls = g2.api('publicInfo').classes;
+  const u = g2.api('signup', null, { nickname: '옛학생', name: '김옛날', phone: '01012121212', password: '1234', classIds: [cls[0].id] });
+  const us = g2.ss.getSheetByName('학생');
+  us.data[1][7] = '';
+  const boot = g2.api('bootstrap', u.token);
+  assert.deepStrictEqual(boot.me.classIds, []);
+  assert.strictEqual(boot.subjects.length, 0);
+  assert.strictEqual(boot.appName, '이어진 물리학');
+  assert(set.data.some(r => r[0] === '앱 이름' && r[1] === '이어진 물리학'));
+  const r = g2.api('setMyClasses', u.token, { classIds: [cls[1].id] });
+  assert.deepStrictEqual(r.subjects.map(x => x.id), [cls[1].id]);
+  us.data[0] = us.data[0].slice(0, 7);
+  us.data.slice(1).forEach(row => row.splice(7));
+  g2.api('bootstrap', u.token);
+  assert.strictEqual(us.data[0][7], '반 id(쉼표 구분)');
 });
 
 console.log(failures ? `\n${failures} test(s) failed` : '\nAll tests passed');

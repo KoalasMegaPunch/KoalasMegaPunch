@@ -17,8 +17,8 @@ const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 const SHEET_DEFS = {
   users: {
     name: '학생',
-    fields: ['id', 'nickname', 'name', 'phone', 'pwHash', 'salt', 'createdAt'],
-    headers: ['id', '닉네임', '이름', '전화번호', '비밀번호(암호화)', 'salt', '가입일시'],
+    fields: ['id', 'nickname', 'name', 'phone', 'pwHash', 'salt', 'createdAt', 'classIds'],
+    headers: ['id', '닉네임', '이름', '전화번호', '비밀번호(암호화)', 'salt', '가입일시', '반 id(쉼표 구분)'],
   },
   subjects: {
     name: '과목',
@@ -33,8 +33,8 @@ const SHEET_DEFS = {
   bookings: {
     name: 'Zoom Clinic 예약',
     legacyName: '보충예약',
-    fields: ['id', 'date', 'hour', 'userId', 'nickname', 'name', 'phone', 'memo', 'createdAt'],
-    headers: ['id', '날짜', '시작시각', '학생id', '닉네임', '이름', '전화번호', '메모', '신청일시'],
+    fields: ['id', 'date', 'hour', 'userId', 'nickname', 'name', 'phone', 'memo', 'createdAt', 'className'],
+    headers: ['id', '날짜', '시작시각', '학생id', '닉네임', '이름', '전화번호', '메모', '신청일시', '반'],
   },
   questions: {
     name: '질문',
@@ -84,11 +84,14 @@ let _mem = {}; // 한 번의 요청 동안만 쓰는 캐시
  * ======================================================= */
 
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle(settings_().appName || '클래스')
+  const name = settings_().appName || '이어진 물리학';
+  const out = HtmlService.createHtmlOutputFromFile('Index')
+    .setTitle(name)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
     .addMetaTag('mobile-web-app-capable', 'yes')
     .addMetaTag('apple-mobile-web-app-capable', 'yes');
+  try { out.addMetaTag('apple-mobile-web-app-title', name); } catch (e) { /* 지원 안 되면 무시 (홈 화면 이름은 제목으로 대체) */ }
+  return out;
 }
 
 function onOpen() {
@@ -142,7 +145,7 @@ function api(action, token, payload) {
 
 const HANDLERS = {
   // ---- 공개 ----
-  publicInfo: { auth: 'public', fn: () => ({ appName: settings_().appName }) },
+  publicInfo: { auth: 'public', fn: () => ({ appName: settings_().appName, classes: activeSubjects_() }) },
   signup: { auth: 'public', write: true, fn: signup_ },
   login: { auth: 'public', fn: login_ },
   adminLogin: { auth: 'public', fn: adminLogin_ },
@@ -160,6 +163,7 @@ const HANDLERS = {
   noticesList: { auth: 'user', fn: noticesList_ },
   myInfo: { auth: 'user', fn: myInfo_ },
   changePassword: { auth: 'user', write: true, fn: changePassword_ },
+  setMyClasses: { auth: 'user', write: true, fn: setMyClasses_ },
 
   // ---- 선생님(마스터) ----
   subjectSave: { auth: 'admin', write: true, fn: subjectSave_ },
@@ -176,6 +180,7 @@ const HANDLERS = {
   studentsList: { auth: 'admin', fn: studentsList_ },
   studentResetPassword: { auth: 'admin', write: true, fn: studentResetPassword_ },
   studentDelete: { auth: 'admin', write: true, fn: studentDelete_ },
+  studentSetClasses: { auth: 'admin', write: true, fn: studentSetClasses_ },
 };
 
 /* =========================================================
@@ -194,12 +199,13 @@ function signup_(p) {
   if (!phone) throw new Error('휴대폰 번호를 정확히 입력해 주세요. (예: 010-1234-5678)');
   if (password.length < 4) throw new Error('비밀번호는 4자 이상으로 정해 주세요.');
   if (findUserByNickname_(nickname)) throw new Error('이미 사용 중인 닉네임이에요.');
+  const classIds = validClassIds_(p.classIds);
 
   const salt = Utilities.getUuid();
   const user = {
     id: newId_(), nickname, name, phone,
     pwHash: hashPw_(password, salt), salt,
-    createdAt: nowStr_(),
+    createdAt: nowStr_(), classIds: classIds.join(','),
   };
   insert_('users', user);
   return { token: makeToken_(user.id, 'student', user.pwHash), me: meOf_(user) };
@@ -263,8 +269,51 @@ function studentsList_() {
   const counts = {};
   rows_('bookings').forEach(b => { counts[b.userId] = (counts[b.userId] || 0) + 1; });
   return rows_('users')
-    .map(u => ({ id: u.id, nickname: u.nickname, name: u.name, phone: u.phone, createdAt: u.createdAt, bookings: counts[u.id] || 0 }))
+    .map(u => ({ id: u.id, nickname: u.nickname, name: u.name, phone: u.phone, createdAt: u.createdAt, bookings: counts[u.id] || 0, classIds: classIdsOf_(u) }))
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+}
+
+/** 선생님: 학생의 반 변경 */
+function studentSetClasses_(p) {
+  const u = rows_('users').find(x => x.id === p.id);
+  if (!u) throw new Error('학생을 찾을 수 없어요.');
+  u.classIds = validClassIds_(p.classIds, true).join(',');
+  update_('users', u);
+  return true;
+}
+
+/** 학생: 반이 아직 없을 때(이전 버전에서 가입한 경우) 한 번만 직접 고를 수 있음 */
+function setMyClasses_(p, ctx) {
+  if (ctx.role === 'admin') throw new Error('선생님 계정은 반을 고르지 않아요.');
+  const u = ctx.user;
+  if (classIdsOf_(u).length) throw new Error('반 변경은 선생님께 요청해 주세요.');
+  u.classIds = validClassIds_(p.classIds).join(',');
+  update_('users', u);
+  return { me: meOf_(u), subjects: subjectsFor_(ctx) };
+}
+
+function classIdsOf_(u) {
+  return String((u && u.classIds) || '').split(',').map(x => x.trim()).filter(Boolean);
+}
+
+function validClassIds_(ids, allowHidden) {
+  const valid = {};
+  rows_('subjects').forEach(s => { if (allowHidden || s.active !== 'N') valid[s.id] = true; });
+  const out = [].concat(ids || []).map(String).filter((id, i, arr) => valid[id] && arr.indexOf(id) === i);
+  if (!out.length) throw new Error('반을 한 개 이상 선택해 주세요.');
+  return out;
+}
+
+function activeSubjects_() {
+  return rows_('subjects').filter(s => s.active !== 'N')
+    .sort((a, b) => (+a.order || 0) - (+b.order || 0))
+    .map(s => ({ id: s.id, name: s.name }));
+}
+
+/** 학생은 자기 반 자료만 볼 수 있음 */
+function assertClass_(ctx, subjectId) {
+  if (ctx.role === 'admin') return;
+  if (classIdsOf_(ctx.user).indexOf(String(subjectId || '')) < 0) throw new Error('내 반의 자료만 볼 수 있어요.');
 }
 
 function studentResetPassword_(p) {
@@ -293,8 +342,9 @@ function studentDelete_(p) {
  * ======================================================= */
 
 function subjectsFor_(ctx) {
+  const mine = ctx.role === 'admin' ? null : classIdsOf_(ctx.user);
   return rows_('subjects')
-    .filter(s => ctx.role === 'admin' || s.active !== 'N')
+    .filter(s => ctx.role === 'admin' || (s.active !== 'N' && mine.indexOf(s.id) >= 0))
     .sort((a, b) => (+a.order || 0) - (+b.order || 0))
     .map(s => ({ id: s.id, name: s.name, active: s.active !== 'N' }));
 }
@@ -339,7 +389,8 @@ function subjectSetActive_(p, ctx) {
  * 수업 (이번 주 수업내용 / 영상 / 숙제)
  * ======================================================= */
 
-function lessonsList_(p) {
+function lessonsList_(p, ctx) {
+  assertClass_(ctx, p.subjectId);
   const thisWeek = mondayOf_(todayStr_());
   const lessons = rows_('lessons')
     .filter(l => l.subjectId === p.subjectId)
@@ -447,7 +498,7 @@ function bookingSlots_(p, ctx) {
         hour: h, label: hourLabel_(h), count: here.length, capacity: cfg.capacity,
         open: slotOpen_(date, h, cfg), mine: mine ? mine.id : null,
       };
-      if (isAdmin) slot.people = here.map(b => ({ id: b.id, nickname: b.nickname, name: b.name, phone: b.phone, memo: b.memo }));
+      if (isAdmin) slot.people = here.map(b => ({ id: b.id, nickname: b.nickname, name: b.name, phone: b.phone, memo: b.memo, className: b.className }));
       slots.push(slot);
     }
     return { date, label: dateLabel_(date), week: mondayOf_(date), slots };
@@ -489,14 +540,17 @@ function bookingBook_(p, ctx) {
     if (n >= cfg.maxPerWeek) throw new Error('한 주에 최대 ' + cfg.maxPerWeek + '시간까지 신청할 수 있어요.');
   }
   const u = ctx.user;
+  const myClasses = classIdsOf_(u);
+  const classId = p.subjectId && myClasses.indexOf(String(p.subjectId)) >= 0 ? String(p.subjectId) : myClasses[0];
+  const cls = rows_('subjects').find(s => s.id === classId);
   const b = {
     id: newId_(), date, hour: String(hour), userId: u.id, nickname: u.nickname, name: u.name, phone: u.phone,
-    memo: clean_(p.memo, 200), createdAt: nowStr_(),
+    memo: clean_(p.memo, 200), createdAt: nowStr_(), className: cls ? cls.name : '',
   };
   insert_('bookings', b);
   rebuildTimetable_();
   notify_('[Zoom Clinic 신청] ' + dateLabel_(date) + ' ' + hourLabel_(hour) + ' - ' + u.name,
-    u.name + '(' + u.nickname + ', ' + u.phone + ') 학생이 Zoom Clinic을 신청했어요.\n\n' +
+    (b.className ? '[' + b.className + '] ' : '') + u.name + '(' + u.nickname + ', ' + u.phone + ') 학생이 Zoom Clinic을 신청했어요.\n\n' +
     '일시: ' + dateLabel_(date) + ' ' + hourLabel_(hour) + (b.memo ? '\n메모: ' + b.memo : ''));
   return true;
 }
@@ -546,7 +600,7 @@ function rebuildTimetable_() {
     const bg = ['#f3f4f6'];
     dates.forEach(d => {
       const here = bookings.filter(b => b.date === d && +b.hour === h);
-      row.push(here.map(b => b.name + ' (' + b.nickname + ')' + (b.memo ? '\n· ' + b.memo : '')).join('\n'));
+      row.push(here.map(b => (b.className ? '[' + b.className + ']\n' : '') + b.name + ' (' + b.nickname + ')\n' + b.phone + (b.memo ? '\n· ' + b.memo : '')).join('\n\n'));
       bg.push(here.length ? (here.length >= cfg.capacity ? '#bfdbfe' : '#dbeafe') : '#ffffff');
     });
     body.push(row);
@@ -566,7 +620,7 @@ function rebuildTimetable_() {
   sh.setFrozenRows(2);
   sh.setFrozenColumns(1);
   sh.setColumnWidth(1, 110);
-  if (dates.length) sh.setColumnWidths(2, dates.length, 150);
+  if (dates.length) sh.setColumnWidths(2, dates.length, 210);
 }
 
 /* =========================================================
@@ -574,6 +628,7 @@ function rebuildTimetable_() {
  * ======================================================= */
 
 function questionsList_(p, ctx) {
+  assertClass_(ctx, p.subjectId);
   const isAdmin = ctx.role === 'admin';
   const faqSources = {};
   rows_('faq').forEach(f => { if (f.sourceId) faqSources[f.sourceId] = true; });
@@ -601,6 +656,7 @@ function questionCreate_(p, ctx) {
   if (ctx.role === 'admin') throw new Error('질문은 학생 계정으로 올려 주세요. (FAQ는 FAQ 탭에서 직접 추가할 수 있어요)');
   const subject = rows_('subjects').find(s => s.id === p.subjectId && s.active !== 'N');
   if (!subject) throw new Error('과목을 선택해 주세요.');
+  assertClass_(ctx, subject.id);
   const title = clean_(p.title, 100);
   const content = String(p.content || '').trim().slice(0, 5000);
   if (!title) throw new Error('제목을 입력해 주세요.');
@@ -639,6 +695,7 @@ function questionAnswer_(p) {
 
 /** 과목(반) 공지 + 전체 공지. 고정 공지가 먼저, 그다음 최신순. */
 function noticesList_(p, ctx) {
+  assertClass_(ctx, p.subjectId);
   const subjectNames = {};
   rows_('subjects').forEach(s => { subjectNames[s.id] = s.name; });
   return rows_('notices')
@@ -683,7 +740,8 @@ function noticeDelete_(p) {
   return true;
 }
 
-function faqList_(p) {
+function faqList_(p, ctx) {
+  assertClass_(ctx, p.subjectId);
   return rows_('faq')
     .filter(f => f.subjectId === p.subjectId)
     .sort((a, b) => (+a.order || 0) - (+b.order || 0))
@@ -772,7 +830,7 @@ function findUserByNickname_(nickname) {
 }
 
 function meOf_(u) {
-  return { id: u.id, nickname: u.nickname, role: 'student' };
+  return { id: u.id, nickname: u.nickname, role: 'student', classIds: classIdsOf_(u) };
 }
 
 /* =========================================================
@@ -812,6 +870,11 @@ function settings_() {
   if (missing.length && last >= 2) {
     sh.getRange(last + 1, 1, missing.length, 3).setNumberFormat('@').setValues(missing);
   }
+  if (out.appName === '물리학 클래스' && rowOf['앱 이름']) {
+    // 이전 기본값이면 새 이름으로 바꿔 줌
+    out.appName = '이어진 물리학';
+    sh.getRange(rowOf['앱 이름'], 2).setValue(out.appName);
+  }
   _mem.settings = out;
   return out;
 }
@@ -844,6 +907,11 @@ function sheet_(key) {
   if (!sh && def.legacyName) {
     sh = ss.getSheetByName(def.legacyName); // 이전 버전 시트가 있으면 이름만 바꿔서 그대로 사용
     if (sh) sh.setName(def.name);
+  }
+  if (sh && sh.getLastColumn() < def.headers.length) {
+    // 새 버전에서 열이 추가된 경우(예: 학생 '반', 예약 '반') 머리글만 채워 줌
+    sh.getRange(1, 1, sh.getMaxRows(), def.headers.length).setNumberFormat('@');
+    sh.getRange(1, 1, 1, def.headers.length).setValues([def.headers]).setFontWeight('bold').setBackground('#eef2ff');
   }
   if (!sh) {
     sh = ss.insertSheet(def.name);

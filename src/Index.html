@@ -212,6 +212,7 @@ textarea.input { min-height: 110px; resize: vertical; }
 .slot.full, .slot.past { color: var(--muted); cursor: default; opacity: .7; }
 .slot.past .h { text-decoration: line-through; }
 .slot.admin-has { border-color: var(--zoom); background: var(--zoom-soft); }
+.slot .cls { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
 .slot .names { font-size: 11.5px; font-weight: 700; color: var(--zoom); }
 
 /* qna */
@@ -443,6 +444,47 @@ function todayYmd() {
 /* =========================================================
  * 시작 / 로그인
  * ======================================================= */
+/** 반이 없는 학생(이전 버전 가입자)은 반부터 고르게 함 */
+function enterApp() {
+  if (!isAdmin() && !(S.me.classIds || []).length) return renderClassPicker();
+  renderMain();
+}
+
+/** 반 선택 칩 (여러 개 선택 가능) */
+function classChooser(classes, selected) {
+  const chosen = new Set(selected || []);
+  const box = el('div', { class: 'row wrap', style: 'gap:8px' });
+  classes.forEach(c => {
+    const b = el('button', { type: 'button', class: 'chip' + (chosen.has(c.id) ? ' on' : ''), onclick: () => {
+      if (chosen.has(c.id)) chosen.delete(c.id); else chosen.add(c.id);
+      b.classList.toggle('on', chosen.has(c.id));
+    } }, c.name);
+    box.append(b);
+  });
+  box.value = () => Array.from(chosen);
+  return box;
+}
+
+async function renderClassPicker() {
+  const app = clear($('#app'));
+  const wrap = el('div', { class: 'auth' }, el('div', { class: 'logo psi' }, 'Ψ'),
+    el('h1', null, '내 반을 골라 주세요'),
+    el('p', { class: 'sub' }, '반을 고르면 그 반의 공지·수업·질문만 보여요. 처음 한 번만 고르고, 바꾸려면 선생님께 말씀해 주세요.'));
+  app.append(wrap);
+  let d;
+  try { d = await call('publicInfo'); } catch (e) { wrap.append(emptyState('⚠️', e.message)); return; }
+  const chooser = classChooser(d.classes);
+  const btn = el('button', { class: 'btn block', style: 'margin-top:18px' }, '확인');
+  btn.addEventListener('click', () => busy(btn, async () => {
+    const r = await call('setMyClasses', { classIds: chooser.value() });
+    S.me = r.me; S.subjects = r.subjects; S.subjectId = r.subjects[0] ? r.subjects[0].id : null;
+    saveStore({ subjectId: S.subjectId });
+    renderMain();
+  }));
+  wrap.append(el('div', { class: 'card' }, chooser, btn),
+    el('button', { class: 'link-btn', onclick: () => logout() }, '로그아웃'));
+}
+
 async function start() {
   const st = loadStore();
   S.token = st.token || null;
@@ -450,7 +492,7 @@ async function start() {
   if (!S.token) return renderAuth();
   try {
     await bootstrap();
-    renderMain();
+    enterApp();
   } catch (e) {
     renderAuth();
   }
@@ -484,11 +526,12 @@ async function renderAuth(mode) {
   const title = el('h1', null, S.appName || ' ');
   wrap.append(el('div', { class: 'logo psi' }, 'Ψ'), title,
     el('p', { class: 'sub' }, mode === 'admin' ? '선생님(마스터) 로그인' : '수업 · 공지 · Zoom Clinic · 질문을 한 곳에서'));
-  if (!S.appName) call('publicInfo').then(d => { S.appName = d.appName; title.textContent = d.appName; document.title = d.appName; }).catch(() => {});
+  const info = call('publicInfo');
+  info.then(d => { S.appName = d.appName; title.textContent = d.appName; document.title = d.appName; }).catch(() => {});
 
   const done = d => {
     S.token = d.token; saveStore({ token: d.token });
-    return bootstrap().then(() => { S.tab = 'notice'; renderMain(); toast(S.me.nickname + '님, 반가워요!'); });
+    return bootstrap().then(() => { S.tab = 'notice'; enterApp(); toast(S.me.nickname + '님, 반가워요!'); });
   };
 
   if (mode === 'admin') {
@@ -521,12 +564,15 @@ async function renderAuth(mode) {
     const phone = input({ placeholder: '010-1234-5678', type: 'tel', inputmode: 'tel', autocomplete: 'tel' });
     const pw = input({ type: 'password', placeholder: '4자 이상', autocomplete: 'new-password' });
     const pw2 = input({ type: 'password', placeholder: '한 번 더', autocomplete: 'new-password' });
+    const classBox = el('div', null, el('div', { class: 'small muted' }, '불러오는 중…'));
+    let chooser = null;
+    info.then(d => { chooser = classChooser(d.classes); clear(classBox).append(chooser); }).catch(() => {});
     const btn = el('button', { class: 'btn block', type: 'submit' }, '가입하기');
     wrap.append(el('form', { onsubmit: e => {
       e.preventDefault();
       if (pw.value !== pw2.value) return toast('비밀번호가 서로 달라요.', true);
       saveStore({ lastNick: nick.value.trim() });
-      busy(btn, () => call('signup', { nickname: nick.value, name: name.value, phone: phone.value, password: pw.value }).then(done));
+      busy(btn, () => call('signup', { nickname: nick.value, name: name.value, phone: phone.value, password: pw.value, classIds: chooser ? chooser.value() : [] }).then(done));
     } },
       field('닉네임', nick, '앱에서 다른 학생들에게는 닉네임만 보여요. (2~12자)'),
       el('div', { class: 'lock-note' }, icon('lock', 16), el('div', null, el('b', null, '이름과 휴대폰 번호는 선생님만 볼 수 있어요.'), ' 다른 학생에게는 절대 공개되지 않아요.')),
@@ -534,6 +580,7 @@ async function renderAuth(mode) {
       field('휴대폰 번호', phone),
       field('비밀번호', pw),
       field('비밀번호 확인', pw2),
+      field('내 반', classBox, '듣고 있는 반을 모두 골라 주세요. 그 반의 공지·수업·질문만 보여요.'),
       btn));
   }
   wrap.append(el('button', { class: 'link-btn', style: 'margin-top:18px', onclick: () => renderAuth('admin') }, '선생님 로그인'));
@@ -851,14 +898,18 @@ function studentSlot(day, s, refresh) {
 
 function bookForm(day, s, refresh) {
   const memo = input({ placeholder: '예: 3단원 문제풀이 질문 (선택)', maxlength: 200 });
+  const myClasses = S.subjects;
+  const clsSel = myClasses.length > 1 ? el('select', { class: 'input' }, myClasses.map(c => el('option', { value: c.id }, c.name))) : null;
+  if (clsSel) clsSel.value = S.subjectId;
   const ok = el('button', { class: 'btn' }, '신청하기');
   const close = openSheet('Zoom Clinic 신청', el('div', null,
     el('div', { class: 'card', style: 'background:var(--zoom-grad);color:#fff;box-shadow:none' },
       el('div', { style: 'font-size:18px;font-weight:800' }, day.label), el('div', null, s.label)),
+    clsSel ? field('어느 반 Clinic인가요?', clsSel) : null,
     field('선생님께 남길 메모', memo, 'Clinic에서 다루고 싶은 내용을 적어두면 선생님이 미리 준비할 수 있어요.')),
     [el('button', { class: 'btn line', onclick: () => close() }, '취소'), ok]);
   ok.addEventListener('click', () => busy(ok, async () => {
-    await call('bookingBook', { date: day.date, hour: s.hour, memo: memo.value });
+    await call('bookingBook', { date: day.date, hour: s.hour, memo: memo.value, subjectId: clsSel ? clsSel.value : (myClasses[0] && myClasses[0].id) });
     close(); toast('Clinic 신청 완료! ' + day.label + ' ' + s.hour + '시');
     refresh();
   }).catch(() => refresh()));
@@ -877,6 +928,7 @@ function adminSlot(day, s, refresh) {
     if (!has) return;
     const body = el('div', null, s.people.map(p => el('div', { class: 'list-row' },
       el('div', { class: 'grow' },
+        p.className ? el('span', { class: 'badge pri', style: 'margin-bottom:4px' }, p.className) : null,
         el('div', { style: 'font-weight:700' }, p.name + ' ', el('span', { class: 'muted small' }, '(' + p.nickname + ')')),
         el('a', { class: 'small', href: 'tel:' + p.phone }, p.phone),
         p.memo ? el('div', { class: 'small muted' }, '메모: ' + p.memo) : null),
@@ -888,7 +940,8 @@ function adminSlot(day, s, refresh) {
     const close = openSheet(day.label + ' ' + s.label, body, [el('button', { class: 'btn line', onclick: () => close() }, '닫기')]);
   } },
   el('div', { class: 'h' }, s.hour + '시'),
-  has ? el('div', { class: 'names' }, s.people.map(p => p.name).join(', ')) : el('div', { class: 's' }, s.open ? '비어 있음' : '지남'));
+  has ? [el('div', { class: 'names' }, s.people.map(p => p.name).join(', ')),
+    el('div', { class: 'cls' }, s.people.map(p => p.className || '').filter(Boolean).join(', '))] : el('div', { class: 's' }, s.open ? '비어 있음' : '지남'));
 }
 
 /* =========================================================
@@ -1149,6 +1202,9 @@ async function loadStudents(card) {
     shown.forEach(u => rows.append(el('div', { class: 'list-row' },
       el('div', { class: 'grow' },
         el('div', { style: 'font-weight:700' }, u.name, ' ', el('span', { class: 'muted small' }, '· ' + u.nickname)),
+        el('div', { class: 'row wrap', style: 'gap:4px;margin:2px 0' }, (u.classIds || []).length
+          ? u.classIds.map(id => { const c = S.subjects.find(x => x.id === id); return c ? el('span', { class: 'badge pri' }, c.name) : null; })
+          : el('span', { class: 'badge wait' }, '반 없음')),
         el('a', { class: 'small', href: 'tel:' + u.phone }, u.phone),
         el('span', { class: 'small muted' }, ' · Clinic ' + u.bookings + '회')),
       el('button', { class: 'btn line sm', onclick: () => studentMenu(u, () => loadStudents(card)) }, '관리'))));
@@ -1164,6 +1220,15 @@ function studentMenu(u, refresh) {
       el('dt', null, '이름'), el('dd', null, u.name),
       el('dt', null, '휴대폰'), el('dd', null, u.phone),
       el('dt', null, '가입일'), el('dd', null, String(u.createdAt).slice(0, 10))),
+    (() => {
+      const chooser = classChooser(S.subjects, u.classIds);
+      const save = el('button', { class: 'btn ghost sm', style: 'margin-top:10px' }, '반 저장');
+      save.addEventListener('click', () => busy(save, async () => {
+        await call('studentSetClasses', { id: u.id, classIds: chooser.value() });
+        close(); toast('반을 바꿨어요.'); refresh();
+      }));
+      return el('div', { class: 'field', style: 'margin-bottom:16px' }, el('label', null, '반'), chooser, save);
+    })(),
     el('button', { class: 'btn line block', style: 'margin-bottom:8px', onclick: async e => {
       if (!(await confirmSheet('비밀번호를 초기화할까요?', u.name + ' 학생의 비밀번호가 임시 번호로 바뀌어요.', '초기화'))) return;
       const d = await busy(e.target, () => call('studentResetPassword', { id: u.id }));

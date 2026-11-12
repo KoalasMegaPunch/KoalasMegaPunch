@@ -41,6 +41,8 @@ const { startServer } = require('./server');
   await page.getByPlaceholder('010-1234-5678').fill('01012345678');
   await page.getByPlaceholder('4자 이상').fill('abcd');
   await page.getByPlaceholder('한 번 더').fill('abcd');
+  await page.locator('form .chip', { hasText: '개념(월금)' }).click();
+  await shot(page, '01-signup');
   await page.getByRole('button', { name: '가입하기' }).click();
   // Lands on 공지 (leftmost tab); opening it marks notices as read.
   await page.getByText('다음 주 월요일 휴강').waitFor();
@@ -99,6 +101,11 @@ const { startServer } = require('./server');
 
   await page.locator('nav [data-tab=booking]').click();
   await page.locator('.slot.admin-has').first().waitFor();
+  await page.locator('.slot.admin-has').first().click();
+  await page.locator('.sheet .badge', { hasText: '개념(월금)' }).waitFor();
+  await page.locator('.sheet a[href^="tel:"]').waitFor();
+  await shot(page, '09c-teacher-slot-detail');
+  await page.getByRole('button', { name: '닫기' }).click();
   await shot(page, '09-teacher-booking');
 
   await page.locator('nav [data-tab=notice]').click();
@@ -112,10 +119,11 @@ const { startServer } = require('./server');
 
   await page.locator('nav [data-tab=admin]').click();
   await page.getByText('총 1명').waitFor();
+  await page.locator('.list-row .badge', { hasText: '개념(월금)' }).first().waitFor();
   await page.locator('.list-row .icon-btn[title="이름 바꾸기"]').first().click();
   await page.locator('.sheet input').fill('겨울특강 물리학 개념반(월금)');
   await page.getByRole('button', { name: '저장' }).click();
-  await page.getByText('겨울특강 물리학 개념반(월금)').waitFor();
+  await page.getByText('겨울특강 물리학 개념반(월금)').first().waitFor();
   await shot(page, '10-teacher-admin');
 
   // --- Student sees teacher's answer
