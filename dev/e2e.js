@@ -42,15 +42,16 @@ const { startServer } = require('./server');
   await page.getByPlaceholder('4자 이상').fill('abcd');
   await page.getByPlaceholder('한 번 더').fill('abcd');
   await page.getByRole('button', { name: '가입하기' }).click();
-  await page.getByText('3강 개념 정리').waitFor();
-  await shot(page, '02-lessons');
-
-  // --- Notices (unread badge → read)
-  await page.locator('nav [data-tab=notice] .dot').waitFor();
-  await page.locator('nav [data-tab=notice]').click();
+  // Lands on 공지 (leftmost tab); opening it marks notices as read.
   await page.getByText('다음 주 월요일 휴강').waitFor();
+  if ((await page.locator('nav button').first().getAttribute('data-tab')) !== 'notice') throw new Error('공지 should be the leftmost tab');
+  await page.waitForTimeout(300);
   await shot(page, '02b-notices');
   if (await page.locator('nav [data-tab=notice] .dot').count()) throw new Error('unread badge should clear');
+
+  await page.locator('nav [data-tab=lessons]').click();
+  await page.getByText('3강 개념 정리').waitFor();
+  await shot(page, '02-lessons');
 
   // --- Booking
   await page.locator('nav [data-tab=booking]').click();

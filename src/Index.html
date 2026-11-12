@@ -73,6 +73,7 @@ a { color: var(--primary); }
 .topbar { padding: calc(env(safe-area-inset-top) + 16px) 20px 6px; }
 .brand-row { display: flex; align-items: center; gap: 10px; }
 .brand { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; font-weight: 700; font-size: 14px; color: var(--muted); }
+.psi { font-family: "Times New Roman", "Noto Serif", Georgia, serif; font-weight: 700; line-height: 1; padding-top: 1px; }
 .brand .mini-logo { width: 26px; height: 26px; border-radius: 8px; background: var(--grad); color: #fff; display: grid; place-items: center; font-size: 15px; flex: none; }
 .who { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; background: var(--card); padding: 4px 12px 4px 4px; border-radius: 999px; box-shadow: var(--shadow); }
 .who .avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--grad); color: #fff; display: grid; place-items: center; font-size: 12px; }
@@ -275,12 +276,39 @@ textarea.input { min-height: 110px; resize: vertical; }
  * 서버 호출
  * ======================================================= */
 const STORE_KEY = 'classapp.v1';
-const S = { token: null, me: null, subjects: [], subjectId: null, tab: 'lessons', appName: '', notice: '', qnaMode: 'board', qFilter: 'all', unanswered: 0, sheetUrl: '', noticeStamps: [] };
+const S = { token: null, me: null, subjects: [], subjectId: null, tab: 'notice', appName: '', notice: '', qnaMode: 'board', qFilter: 'all', unanswered: 0, sheetUrl: '', noticeStamps: [] };
 
 function loadStore() { try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch (e) { return {}; } }
 function saveStore(patch) { try { localStorage.setItem(STORE_KEY, JSON.stringify(Object.assign(loadStore(), patch))); } catch (e) {} }
 
+/* 읽기 요청 캐시: 한 번 불러온 화면은 탭을 오갈 때 바로 보여줍니다.
+ * - CACHE_TTL 동안 재사용, 무언가를 저장/삭제하면 캐시 전체를 비웁니다.
+ * - 이미 보고 있는 탭을 다시 누르면 새로 불러옵니다. */
+const CACHE_TTL = 60 * 1000;
+const READ_ACTIONS = ['lessonsList', 'noticesList', 'bookingSlots', 'questionsList', 'faqList', 'myInfo', 'studentsList'];
+const READ_CACHE = new Map();
 function call(action, payload) {
+  if (READ_ACTIONS.indexOf(action) < 0) {
+    return rawCall(action, payload).then(r => { READ_CACHE.clear(); return r; }, e => { READ_CACHE.clear(); throw e; });
+  }
+  const key = action + JSON.stringify(payload || {});
+  const hit = READ_CACHE.get(key);
+  if (hit && Date.now() - hit.t < CACHE_TTL) return hit.p;
+  const p = rawCall(action, payload);
+  READ_CACHE.set(key, { t: Date.now(), p });
+  p.catch(() => READ_CACHE.delete(key));
+  return p;
+}
+
+/** 첫 화면을 보는 동안 다른 탭 데이터를 미리 받아 둡니다. */
+function prefetch() {
+  const sid = S.subjectId;
+  const list = [['bookingSlots'], ['noticesList', { subjectId: sid }], ['lessonsList', { subjectId: sid }], ['questionsList', { subjectId: sid }]];
+  if (!isAdmin()) list.push(['myInfo']);
+  setTimeout(() => list.forEach(([a, p]) => { if (a === 'bookingSlots' || sid) call(a, p).catch(() => {}); }), 300);
+}
+
+function rawCall(action, payload) {
   return new Promise((resolve, reject) => {
     google.script.run
       .withSuccessHandler(resolve)
@@ -434,13 +462,15 @@ async function bootstrap() {
   S.sheetUrl = d.sheetUrl || ''; S.unanswered = d.unanswered || 0; S.noticeStamps = d.noticeStamps || [];
   if (!S.subjects.some(s => s.id === S.subjectId)) S.subjectId = visibleSubjects()[0] ? visibleSubjects()[0].id : null;
   document.title = S.appName || document.title;
+  prefetch();
 }
 
 function visibleSubjects() { return S.subjects.filter(s => s.active || isAdmin()); }
 function isAdmin() { return S.me && S.me.role === 'admin'; }
 
 function logout(silent) {
-  Object.assign(S, { token: null, me: null, tab: 'lessons', qnaMode: 'board', qFilter: 'all', unanswered: 0, sheetUrl: '', noticeStamps: [] });
+  READ_CACHE.clear();
+  Object.assign(S, { token: null, me: null, tab: 'notice', qnaMode: 'board', qFilter: 'all', unanswered: 0, sheetUrl: '', noticeStamps: [] });
   saveStore({ token: null });
   renderAuth();
   if (!silent) toast('로그아웃했어요.');
@@ -452,13 +482,13 @@ async function renderAuth(mode) {
   const wrap = el('div', { class: 'auth' });
   app.append(wrap);
   const title = el('h1', null, S.appName || ' ');
-  wrap.append(el('div', { class: 'logo' }, '⚛︎'), title,
+  wrap.append(el('div', { class: 'logo psi' }, 'Ψ'), title,
     el('p', { class: 'sub' }, mode === 'admin' ? '선생님(마스터) 로그인' : '수업 · 공지 · Zoom Clinic · 질문을 한 곳에서'));
   if (!S.appName) call('publicInfo').then(d => { S.appName = d.appName; title.textContent = d.appName; document.title = d.appName; }).catch(() => {});
 
   const done = d => {
     S.token = d.token; saveStore({ token: d.token });
-    return bootstrap().then(() => { S.tab = 'lessons'; renderMain(); toast(S.me.nickname + '님, 반가워요!'); });
+    return bootstrap().then(() => { S.tab = 'notice'; renderMain(); toast(S.me.nickname + '님, 반가워요!'); });
   };
 
   if (mode === 'admin') {
@@ -512,8 +542,8 @@ async function renderAuth(mode) {
 /* =========================================================
  * 메인 화면 (상단바 + 하단 탭)
  * ======================================================= */
-const TABS_STUDENT = [['lessons', '수업', 'book'], ['notice', '공지', 'bell'], ['booking', 'Zoom Clinic', 'video'], ['qna', '질문', 'chat'], ['me', '내 정보', 'user']];
-const TABS_ADMIN = [['lessons', '수업', 'book'], ['notice', '공지', 'bell'], ['booking', 'Zoom Clinic', 'video'], ['qna', '질문', 'chat'], ['admin', '관리', 'gear']];
+const TABS_STUDENT = [['notice', '공지', 'bell'], ['lessons', '수업', 'book'], ['booking', 'Zoom Clinic', 'video'], ['qna', '질문', 'chat'], ['me', '내 정보', 'user']];
+const TABS_ADMIN = [['notice', '공지', 'bell'], ['lessons', '수업', 'book'], ['booking', 'Zoom Clinic', 'video'], ['qna', '질문', 'chat'], ['admin', '관리', 'gear']];
 
 function tabTitle() {
   const admin = isAdmin();
@@ -530,19 +560,19 @@ function tabTitle() {
 function renderMain() {
   const app = clear($('#app'));
   const tabs = isAdmin() ? TABS_ADMIN : TABS_STUDENT;
-  if (!tabs.some(t => t[0] === S.tab)) S.tab = 'lessons';
+  if (!tabs.some(t => t[0] === S.tab)) S.tab = 'notice';
   const [title, sub] = tabTitle();
   const nick = isAdmin() ? '선생님' : S.me.nickname;
   app.append(el('header', { class: 'topbar' },
     el('div', { class: 'brand-row' },
-      el('div', { class: 'brand' }, el('span', { class: 'mini-logo' }, '⚛︎'), el('span', { style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, S.appName)),
+      el('div', { class: 'brand' }, el('span', { class: 'mini-logo psi' }, 'Ψ'), el('span', { style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, S.appName)),
       el('span', { class: 'who' + (isAdmin() ? ' admin' : '') }, el('span', { class: 'avatar' }, nick.charAt(0)), nick)),
     el('h1', { class: 'page-title' }, title),
     sub ? el('p', { class: 'page-sub' }, sub) : null));
   app.append(el('main', { id: 'view' }));
   const inner = el('div', { class: 'nav-inner' });
   tabs.forEach(([key, label, ic]) => {
-    inner.append(el('button', { class: S.tab === key ? 'on' : '', 'data-tab': key, onclick: () => { S.tab = key; renderMain(); window.scrollTo(0, 0); } },
+    inner.append(el('button', { class: S.tab === key ? 'on' : '', 'data-tab': key, onclick: () => { if (S.tab === key) READ_CACHE.clear(); S.tab = key; renderMain(); window.scrollTo(0, 0); } },
       el('span', { class: 'ic' }, icon(ic, 22)), label,
       key === 'qna' && isAdmin() && S.unanswered ? el('span', { class: 'dot' }, S.unanswered) : null,
       key === 'notice' && !isAdmin() && unreadNotices().length ? el('span', { class: 'dot' }, unreadNotices().length) : null));
