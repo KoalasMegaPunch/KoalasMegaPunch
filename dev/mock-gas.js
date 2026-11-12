@@ -79,6 +79,7 @@ function createGas(opts = {}) {
   const ss = new MockSpreadsheet();
   const props = {};
   const mails = [];
+  const events = [];
   const clock = { offsetMs: 0 };
   const RealDate = Date;
   class FakeDate extends RealDate {
@@ -96,6 +97,7 @@ function createGas(opts = {}) {
     Date: FakeDate,
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ss,
+      flush: () => { events.push('flush'); },
       getUi: () => { throw new Error('no ui'); },
       BorderStyle: { SOLID: 'SOLID' },
     },
@@ -109,7 +111,7 @@ function createGas(opts = {}) {
       base64EncodeWebSafe: x => toBuf(x).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
     },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
-    LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => {}, releaseLock: () => {} }) },
+    LockService: { getScriptLock: () => ({ tryLock: () => { events.push('lock'); return true; }, waitLock: () => {}, releaseLock: () => { events.push('unlock'); } }) },
     MailApp: { sendEmail: (to, subject, body) => { mails.push({ to, subject, body }); } },
     Logger: { log: () => {} },
     HtmlService: {},
@@ -121,7 +123,7 @@ function createGas(opts = {}) {
   const ex = ctx.__exports;
   // google.script.run serializes results as JSON; do the same (also avoids cross-realm objects).
   const api = (...a) => { const r = ex.api(...a); return r === undefined ? r : JSON.parse(JSON.stringify(r)); };
-  return { ss, props, mails, clock, ...ex, api };
+  return { ss, props, mails, clock, events, ...ex, api };
 }
 
 module.exports = { createGas };

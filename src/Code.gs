@@ -137,8 +137,12 @@ function api(action, token, payload) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) throw new Error('요청이 많아요. 잠시 후 다시 시도해 주세요.');
   try {
+    _mem = { settings: _mem.settings }; // 잠금을 얻은 뒤 시트를 새로 읽도록 (설정만 재사용)
     return h.fn(payload || {}, ctx);
   } finally {
+    // 중요: 시트 쓰기는 모아서 나중에 반영되므로, 잠금을 풀기 전에 반드시 저장해야
+    // 다음 요청(동시에 신청한 다른 학생)이 이 예약을 확실히 보고 중복 예약을 막을 수 있음
+    SpreadsheetApp.flush();
     lock.releaseLock();
   }
 }
@@ -522,22 +526,28 @@ function zoom_() {
   return { zoomUrl: /^https?:\/\//i.test(s.zoomUrl) ? s.zoomUrl : '', zoomInfo: s.zoomInfo };
 }
 
+/**
+ * Clinic 신청. 잠금 안에서 실행되므로 동시에 같은 시간을 눌러도 한 명만 성공합니다.
+ * 자리가 없거나 마감된 경우에는 오류 대신 { ok:false, message, ...최신 시간표 } 를 돌려줘
+ * 학생 화면이 바로 최신 상태로 바뀌도록 합니다.
+ */
 function bookingBook_(p, ctx) {
   if (ctx.role === 'admin') throw new Error('Zoom Clinic 신청은 학생 계정으로 해 주세요.');
   const cfg = bookingConfig_();
   const date = String(p.date || '');
   const hour = parseInt(p.hour, 10);
-  if (bookingDates_(cfg).indexOf(date) < 0 || !(hour >= cfg.start && hour < cfg.end)) throw new Error('신청할 수 없는 시간이에요.');
-  if (!slotOpen_(date, hour, cfg)) throw new Error('신청 시간이 지났어요.');
+  const fail = message => Object.assign({ ok: false, message }, bookingSlots_({}, ctx));
+  if (bookingDates_(cfg).indexOf(date) < 0 || !(hour >= cfg.start && hour < cfg.end)) return fail('신청할 수 없는 시간이에요.');
+  if (!slotOpen_(date, hour, cfg)) return fail('신청 시간이 지났어요.');
 
   const all = rows_('bookings');
   const here = all.filter(b => b.date === date && +b.hour === hour);
-  if (here.some(b => b.userId === ctx.user.id)) throw new Error('이미 신청한 시간이에요.');
-  if (here.length >= cfg.capacity) throw new Error('방금 다른 학생이 먼저 신청했어요. 다른 시간을 골라 주세요.');
+  if (here.some(b => b.userId === ctx.user.id)) return fail('이미 신청한 시간이에요.');
+  if (here.length >= cfg.capacity) return fail('아쉽게도 방금 다른 학생이 먼저 신청했어요. 다른 시간을 골라 주세요.');
   if (cfg.maxPerWeek > 0) {
     const week = mondayOf_(date);
     const n = all.filter(b => b.userId === ctx.user.id && mondayOf_(b.date) === week).length;
-    if (n >= cfg.maxPerWeek) throw new Error('한 주에 최대 ' + cfg.maxPerWeek + '시간까지 신청할 수 있어요.');
+    if (n >= cfg.maxPerWeek) return fail('한 주에 최대 ' + cfg.maxPerWeek + '시간까지 신청할 수 있어요.');
   }
   const u = ctx.user;
   const myClasses = classIdsOf_(u);
@@ -548,27 +558,31 @@ function bookingBook_(p, ctx) {
     memo: clean_(p.memo, 200), createdAt: nowStr_(), className: cls ? cls.name : '',
   };
   insert_('bookings', b);
+  SpreadsheetApp.flush(); // 예약부터 먼저 확정 저장 (시간표 그리기·메일보다 우선)
   rebuildTimetable_();
   notify_('[Zoom Clinic 신청] ' + dateLabel_(date) + ' ' + hourLabel_(hour) + ' - ' + u.name,
     (b.className ? '[' + b.className + '] ' : '') + u.name + '(' + u.nickname + ', ' + u.phone + ') 학생이 Zoom Clinic을 신청했어요.\n\n' +
     '일시: ' + dateLabel_(date) + ' ' + hourLabel_(hour) + (b.memo ? '\n메모: ' + b.memo : ''));
-  return true;
+  return Object.assign({ ok: true }, bookingSlots_({}, ctx));
 }
 
 function bookingCancel_(p, ctx) {
   const b = rows_('bookings').find(x => x.id === p.id);
-  if (!b) throw new Error('이미 취소된 예약이에요.');
+  if (!b) return Object.assign({ ok: false, message: '이미 취소된 예약이에요.' }, bookingSlots_({}, ctx));
   const isAdmin = ctx.role === 'admin';
   if (!isAdmin) {
     if (b.userId !== ctx.user.id) throw new Error('내 예약만 취소할 수 있어요.');
-    if (!slotOpen_(b.date, +b.hour, bookingConfig_())) throw new Error('취소 가능 시간이 지났어요. 선생님께 직접 말씀해 주세요.');
+    if (!slotOpen_(b.date, +b.hour, bookingConfig_())) {
+      return Object.assign({ ok: false, message: '취소 가능 시간이 지났어요. 선생님께 직접 말씀해 주세요.' }, bookingSlots_({}, ctx));
+    }
   }
   remove_('bookings', b);
+  SpreadsheetApp.flush();
   rebuildTimetable_();
   notify_('[Zoom Clinic 취소] ' + dateLabel_(b.date) + ' ' + hourLabel_(+b.hour) + ' - ' + b.name,
     b.name + '(' + b.nickname + ') 학생의 Zoom Clinic이 ' + (isAdmin ? '선생님에 의해 ' : '') + '취소되었어요.\n\n' +
     '일시: ' + dateLabel_(b.date) + ' ' + hourLabel_(+b.hour));
-  return true;
+  return Object.assign({ ok: true }, bookingSlots_({}, ctx));
 }
 
 /** [Zoom Clinic 시간표] 시트를 시간표 모양으로 다시 그립니다. (이번 주부터) */

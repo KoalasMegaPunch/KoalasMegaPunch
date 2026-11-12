@@ -286,7 +286,8 @@ function saveStore(patch) { try { localStorage.setItem(STORE_KEY, JSON.stringify
  * - CACHE_TTL 동안 재사용, 무언가를 저장/삭제하면 캐시 전체를 비웁니다.
  * - 이미 보고 있는 탭을 다시 누르면 새로 불러옵니다. */
 const CACHE_TTL = 60 * 1000;
-const READ_ACTIONS = ['lessonsList', 'noticesList', 'bookingSlots', 'questionsList', 'faqList', 'myInfo', 'studentsList'];
+// bookingSlots(Clinic 시간표)는 항상 최신이어야 하므로 캐시하지 않음
+const READ_ACTIONS = ['lessonsList', 'noticesList', 'questionsList', 'faqList', 'myInfo', 'studentsList'];
 const READ_CACHE = new Map();
 function call(action, payload) {
   if (READ_ACTIONS.indexOf(action) < 0) {
@@ -304,9 +305,9 @@ function call(action, payload) {
 /** 첫 화면을 보는 동안 다른 탭 데이터를 미리 받아 둡니다. */
 function prefetch() {
   const sid = S.subjectId;
-  const list = [['bookingSlots'], ['noticesList', { subjectId: sid }], ['lessonsList', { subjectId: sid }], ['questionsList', { subjectId: sid }]];
+  const list = [['noticesList', { subjectId: sid }], ['lessonsList', { subjectId: sid }], ['questionsList', { subjectId: sid }]];
   if (!isAdmin()) list.push(['myInfo']);
-  setTimeout(() => list.forEach(([a, p]) => { if (a === 'bookingSlots' || sid) call(a, p).catch(() => {}); }), 300);
+  setTimeout(() => list.forEach(([a, p]) => { if (sid) call(a, p).catch(() => {}); }), 300);
 }
 
 function rawCall(action, payload) {
@@ -511,6 +512,7 @@ function visibleSubjects() { return S.subjects.filter(s => s.active || isAdmin()
 function isAdmin() { return S.me && S.me.role === 'admin'; }
 
 function logout(silent) {
+  stopClinicPoll();
   READ_CACHE.clear();
   Object.assign(S, { token: null, me: null, tab: 'notice', qnaMode: 'board', qFilter: 'all', unanswered: 0, sheetUrl: '', noticeStamps: [] });
   saveStore({ token: null });
@@ -605,6 +607,7 @@ function tabTitle() {
 }
 
 function renderMain() {
+  stopClinicPoll();
   const app = clear($('#app'));
   const tabs = isAdmin() ? TABS_ADMIN : TABS_STUDENT;
   if (!tabs.some(t => t[0] === S.tab)) S.tab = 'notice';
@@ -815,13 +818,48 @@ function noticeForm(n, refresh) {
 /* =========================================================
  * 2. Zoom Clinic 탭
  * ======================================================= */
-async function viewBooking(view) {
-  clear(view).append(loader());
-  let d;
-  try { d = await call('bookingSlots'); }
-  catch (e) { clear(view).append(emptyState('⚠️', e.message)); return; }
+/* ---- Clinic 시간표 자동 새로고침 ----
+ * 다른 학생이 먼저 신청한 시간이 내 화면에 빨리 반영되도록, Clinic 탭을 보고 있는 동안
+ * CLINIC_POLL_MS 마다 최신 시간표를 받아 옵니다. (앱이 백그라운드이거나 입력창이 열려 있으면 쉼)
+ * 실제 중복 예약은 서버 잠금으로 막히고, 여기서는 '마감된 칸을 누르는 일'을 줄여 줍니다. */
+const CLINIC_POLL_MS = 15 * 1000;
+let clinicPoll = null;
+function stopClinicPoll() { if (clinicPoll) { clearInterval(clinicPoll.timer); clinicPoll = null; } }
+function startClinicPoll(view, d) {
+  stopClinicPoll();
+  const poll = { last: JSON.stringify(d.days), busy: false };
+  poll.tick = async () => {
+    if (poll.busy || document.hidden || S.tab !== 'booking' || !view.isConnected || document.querySelector('.backdrop')) return;
+    poll.busy = true;
+    try {
+      const nd = await call('bookingSlots');
+      if (clinicPoll !== poll) return;
+      const key = JSON.stringify(nd.days);
+      if (key !== poll.last) { poll.last = key; viewBooking(view, nd); }
+      else markUpdated(view);
+    } catch (e) { /* 잠깐 끊겨도 다음 주기에 다시 시도 */ }
+    finally { poll.busy = false; }
+  };
+  poll.timer = setInterval(poll.tick, CLINIC_POLL_MS);
+  clinicPoll = poll;
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && clinicPoll) clinicPoll.tick(); });
+function markUpdated(view) {
+  const t = view.querySelector('.live-stamp');
+  if (t) t.textContent = '실시간 반영 중 · ' + new Date().toTimeString().slice(0, 8) + ' 기준';
+}
+
+async function viewBooking(view, data) {
+  let d = data;
+  if (!d) {
+    clear(view).append(loader());
+    try { d = await call('bookingSlots'); }
+    catch (e) { clear(view).append(emptyState('⚠️', e.message)); return; }
+  }
+  const scrollY = window.scrollY;
   clear(view);
-  const refresh = () => viewBooking(view);
+  const refresh = nd => viewBooking(view, nd);
+  startClinicPoll(view, d);
   const mine = [];
   d.days.forEach(day => day.slots.forEach(s => { if (s.mine) mine.push({ day, s }); }));
 
@@ -854,6 +892,9 @@ async function viewBooking(view) {
     isAdmin() ? null : el('span', null, el('i', { style: 'background:var(--zoom-grad)' }), '내 예약'),
     el('span', null, el('i', { style: 'background:var(--field);opacity:.7' }), '마감/지남')));
 
+  view.append(el('div', { class: 'live-stamp small muted', style: 'margin:-6px 4px 6px' }, ''));
+  markUpdated(view);
+  if (data) requestAnimationFrame(() => window.scrollTo(0, scrollY));
   if (!d.days.length) view.append(emptyState('🗓️', '지금 신청할 수 있는 날짜가 없어요.'));
   let lastWeek = null;
   d.days.forEach(day => {
@@ -889,7 +930,7 @@ function studentSlot(day, s, refresh) {
   else if (!s.open) { cls += ' past'; sub = '마감'; }
   else if (full) { cls += ' full'; sub = '마감'; }
   else { cls += ' free'; sub = s.capacity > 1 ? '신청 (' + (s.capacity - s.count) + '자리)' : '신청 가능'; }
-  return el('button', { class: cls, onclick: () => {
+  return el('button', { class: cls, 'data-slot': day.date + ' ' + s.hour, onclick: () => {
     if (s.mine) return cancelMine(day, s, refresh);
     if (!s.open || full) return toast(s.open ? '이미 마감된 시간이에요.' : '신청 시간이 지났어요.');
     bookForm(day, s, refresh);
@@ -902,24 +943,44 @@ function bookForm(day, s, refresh) {
   const clsSel = myClasses.length > 1 ? el('select', { class: 'input' }, myClasses.map(c => el('option', { value: c.id }, c.name))) : null;
   if (clsSel) clsSel.value = S.subjectId;
   const ok = el('button', { class: 'btn' }, '신청하기');
+  const warn = el('div', { class: 'lock-note hidden', style: 'background:var(--warn-soft);color:var(--warn);font-weight:700' });
   const close = openSheet('Zoom Clinic 신청', el('div', null,
+    warn,
     el('div', { class: 'card', style: 'background:var(--zoom-grad);color:#fff;box-shadow:none' },
       el('div', { style: 'font-size:18px;font-weight:800' }, day.label), el('div', null, s.label)),
     clsSel ? field('어느 반 Clinic인가요?', clsSel) : null,
     field('선생님께 남길 메모', memo, 'Clinic에서 다루고 싶은 내용을 적어두면 선생님이 미리 준비할 수 있어요.')),
     [el('button', { class: 'btn line', onclick: () => close() }, '취소'), ok]);
+  // 폼을 여는 사이 다른 학생이 먼저 잡았는지 바로 확인
+  call('bookingSlots').then(nd => {
+    const now = (nd.days.find(x => x.date === day.date) || { slots: [] }).slots.find(x => x.hour === s.hour);
+    if (now && !now.mine && (now.count >= now.capacity || !now.open)) {
+      warn.textContent = '방금 다른 학생이 이 시간을 먼저 신청했어요. 다른 시간을 골라 주세요.';
+      warn.classList.remove('hidden');
+      ok.disabled = true;
+    }
+  }).catch(() => {});
   ok.addEventListener('click', () => busy(ok, async () => {
-    await call('bookingBook', { date: day.date, hour: s.hour, memo: memo.value, subjectId: clsSel ? clsSel.value : (myClasses[0] && myClasses[0].id) });
-    close(); toast('Clinic 신청 완료! ' + day.label + ' ' + s.hour + '시');
-    refresh();
-  }).catch(() => refresh()));
+    const r = await call('bookingBook', { date: day.date, hour: s.hour, memo: memo.value, subjectId: clsSel ? clsSel.value : (myClasses[0] && myClasses[0].id) });
+    close();
+    refresh(r);
+    if (r.ok) toast('Clinic 신청 완료! ' + day.label + ' ' + s.hour + '시');
+    else bookingRejected(r.message);
+  }).catch(() => { close(); refresh(); }));
+}
+
+function bookingRejected(message) {
+  let close;
+  close = openSheet('신청하지 못했어요', el('p', { class: 'muted', style: 'margin-top:0' }, message, el('br'), '시간표를 최신 상태로 바꿨어요.'),
+    [el('button', { class: 'btn', onclick: () => close() }, '다른 시간 고르기')]);
 }
 
 async function cancelMine(day, s, refresh) {
   if (!s.open) return toast('취소 가능 시간이 지났어요. 선생님께 직접 말씀해 주세요.', true);
   if (!(await confirmSheet('예약을 취소할까요?', day.label + ' ' + s.label, '예약 취소', true))) return;
-  await busy(null, () => call('bookingCancel', { id: s.mine }));
-  toast('취소했어요.'); refresh();
+  const r = await busy(null, () => call('bookingCancel', { id: s.mine }));
+  refresh(r);
+  if (r.ok) toast('취소했어요.'); else toast(r.message, true);
 }
 
 function adminSlot(day, s, refresh) {
@@ -934,8 +995,9 @@ function adminSlot(day, s, refresh) {
         p.memo ? el('div', { class: 'small muted' }, '메모: ' + p.memo) : null),
       el('button', { class: 'btn danger sm', onclick: async e => {
         if (!(await confirmSheet('이 예약을 취소할까요?', p.name + ' · ' + day.label + ' ' + s.label, '예약 취소', true))) return;
-        await busy(e.target, () => call('bookingCancel', { id: p.id }));
-        close(); toast('취소했어요.'); refresh();
+        const r = await busy(e.target, () => call('bookingCancel', { id: p.id }));
+        close(); refresh(r);
+        if (r.ok) toast('취소했어요.'); else toast(r.message, true);
       } }, '취소'))));
     const close = openSheet(day.label + ' ' + s.label, body, [el('button', { class: 'btn line', onclick: () => close() }, '닫기')]);
   } },

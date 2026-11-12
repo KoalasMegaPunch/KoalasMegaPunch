@@ -2,6 +2,7 @@
 const { chromium, devices } = require('playwright');
 const path = require('path');
 const fs = require('fs');
+const assert = require('assert');
 const { startServer } = require('./server');
 
 (async () => {
@@ -65,6 +66,37 @@ const { startServer } = require('./server');
   await page.locator('.slot.mine').first().waitFor();
   await shot(page, '04-booked');
 
+  // --- 동시 신청 상황 재현 (다른 반 학생 = rival 이 서버에서 직접 신청)
+  const cls = g.api('publicInfo').classes;
+  const rival = g.api('signup', null, { nickname: '라이벌', name: '이경쟁', phone: '01022223333', password: '1234', classIds: [cls[1].id] }).token;
+  const freeSlots = page.locator('.slot.free');
+  const slotKey = async i => (await freeSlots.nth(i).getAttribute('data-slot')).split(' ');
+  // (1) 화면은 '빈 칸'인데 그 사이 rival 이 먼저 신청 → 폼을 열면 바로 경고 + 버튼 비활성
+  let [d1, h1] = await slotKey(0);
+  assert(g.api('bookingBook', rival, { date: d1, hour: +h1 }).ok);
+  await freeSlots.first().click();
+  await page.getByText('방금 다른 학생이 이 시간을 먼저 신청했어요').waitFor();
+  if (!(await page.getByRole('button', { name: '신청하기' }).isDisabled())) throw new Error('book button should be disabled');
+  await shot(page, '04b-race-warning');
+  await page.locator('.sheet .btn.line', { hasText: '취소' }).click();
+  // (2) 폼을 연 '다음'에 rival 이 신청 → 신청하기를 누르면 거절 안내 + 시간표가 즉시 최신으로
+  let [d2, h2] = await slotKey(1);
+  await page.locator(`.slot[data-slot="${d2} ${h2}"]`).click();
+  await page.waitForTimeout(500);
+  assert(g.api('bookingBook', rival, { date: d2, hour: +h2 }).ok);
+  await page.getByRole('button', { name: '신청하기' }).click();
+  await page.getByText('신청하지 못했어요').waitFor();
+  await shot(page, '04c-race-rejected');
+  await page.getByRole('button', { name: '다른 시간 고르기' }).click();
+  if (!(await page.locator(`.slot.full[data-slot="${d2} ${h2}"]`).count())) throw new Error('slot should now show as full');
+  // (3) 가만히 보고 있어도 자동 새로고침으로 마감이 반영됨
+  let [d3, h3] = await slotKey(0);
+  assert(g.api('bookingBook', rival, { date: d3, hour: +h3 }).ok);
+  await page.locator(`.slot.full[data-slot="${d3} ${h3}"]`).waitFor({ timeout: 20000 });
+  const rows = g.ss.getSheetByName('Zoom Clinic 예약').data.slice(1);
+  const dup = rows.map(r => r[1] + ' ' + r[2]).filter((k, i, a) => a.indexOf(k) !== i);
+  if (dup.length) throw new Error('double booking: ' + dup);
+
   // --- Q&A
   await page.locator('nav [data-tab=qna]').click();
   await page.getByRole('button', { name: '✏️ 질문하기' }).click();
@@ -101,7 +133,7 @@ const { startServer } = require('./server');
 
   await page.locator('nav [data-tab=booking]').click();
   await page.locator('.slot.admin-has').first().waitFor();
-  await page.locator('.slot.admin-has').first().click();
+  await page.locator('.slot.admin-has', { hasText: '홍길동' }).first().click();
   await page.locator('.sheet .badge', { hasText: '개념(월금)' }).waitFor();
   await page.locator('.sheet a[href^="tel:"]').waitFor();
   await shot(page, '09c-teacher-slot-detail');
@@ -118,7 +150,7 @@ const { startServer } = require('./server');
   await page.getByText('심화반 교재 변경').waitFor();
 
   await page.locator('nav [data-tab=admin]').click();
-  await page.getByText('총 1명').waitFor();
+  await page.getByText('총 2명').waitFor();
   await page.locator('.list-row .badge', { hasText: '개념(월금)' }).first().waitFor();
   await page.locator('.list-row .icon-btn[title="이름 바꾸기"]').first().click();
   await page.locator('.sheet input').fill('겨울특강 물리학 개념반(월금)');

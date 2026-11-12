@@ -9,6 +9,8 @@ function t(name, fn) {
   catch (e) { failures++; console.log('  ✗ ' + name + '\n    ' + e.message); }
 }
 const throws = (fn, re) => assert.throws(fn, e => re.test(e.message));
+/** 예약 거절: 오류 대신 { ok:false, message, days(최신 시간표) } */
+const rejects = (fn, re) => { const r = fn(); assert(r && r.ok === false && re.test(r.message) && Array.isArray(r.days), 'expected rejection ' + re + ', got ' + JSON.stringify(r && r.message)); };
 const settingsSheet = () => g.ss.getSheetByName('설정');
 function setSetting(label, value) {
   const sh = settingsSheet();
@@ -91,10 +93,10 @@ t('booking: slots, book, capacity, cancel, timetable', () => {
   assert(!('people' in day.slots[0]), 'students never see who booked');
 
   g.api('bookingBook', s1.token, { date: day.date, hour: 20, memo: '역학 질문' });
-  throws(() => g.api('bookingBook', s1.token, { date: day.date, hour: 20 }), /이미 신청/);
-  throws(() => g.api('bookingBook', s2.token, { date: day.date, hour: 20 }), /먼저 신청/);
-  throws(() => g.api('bookingBook', s2.token, { date: day.date, hour: 18 }), /신청할 수 없는/);
-  throws(() => g.api('bookingBook', s2.token, { date: '2020-01-04', hour: 20 }), /신청할 수 없는/);
+  rejects(() => g.api('bookingBook', s1.token, { date: day.date, hour: 20 }), /이미 신청/);
+  rejects(() => g.api('bookingBook', s2.token, { date: day.date, hour: 20 }), /먼저 신청/);
+  rejects(() => g.api('bookingBook', s2.token, { date: day.date, hour: 18 }), /신청할 수 없는/);
+  rejects(() => g.api('bookingBook', s2.token, { date: '2020-01-04', hour: 20 }), /신청할 수 없는/);
 
   const mine = g.api('bookingSlots', s1.token).days.find(x => x.date === day.date).slots.find(s => s.hour === 20);
   assert(mine.mine && mine.count === 1);
@@ -120,7 +122,7 @@ t('booking: capacity setting and weekly max', () => {
   const day = g.api('bookingSlots', s1.token).days.find(x => x.slots.every(s => s.open));
   g.api('bookingBook', s1.token, { date: day.date, hour: 21 });
   g.api('bookingBook', s2.token, { date: day.date, hour: 21 });
-  throws(() => g.api('bookingBook', s1.token, { date: day.date, hour: 22 }), /최대 1시간/);
+  rejects(() => g.api('bookingBook', s1.token, { date: day.date, hour: 22 }), /최대 1시간/);
   setSetting('1인 주당 최대 신청(시간)', '0');
   g.api('bookingBook', s1.token, { date: day.date, hour: 22 });
   const tt = g.ss.getSheetByName('Zoom Clinic 시간표').data.map(r => r.join(' | ')).join('\n');
@@ -137,7 +139,7 @@ t('booking: cutoff blocks past slots', () => {
   g.clock.offsetMs = target - Date.now();
   const slots = g.api('bookingSlots', s1.token).days.find(x => x.date === day.date).slots;
   assert.deepStrictEqual(slots.map(s => s.open), [false, false, false, true, true]);
-  throws(() => g.api('bookingBook', s2.token, { date: day.date, hour: 21 }), /지났어요/);
+  rejects(() => g.api('bookingBook', s2.token, { date: day.date, hour: 21 }), /지났어요/);
   g.clock.offsetMs = 0;
 });
 
@@ -165,6 +167,25 @@ t('questions: anonymous, answer, faq', () => {
   assert.deepStrictEqual(faq.map(f => f.question.split('\n')[0]), ['관성이 뭐예요?', '숙제는 어디에 내요?']);
   assert.strictEqual(g.api('faqList', s1.token, { subjectId: subjects[1].id }).length, 0, 'per-subject');
   assert(g.api('questionsList', admin, { subjectId: subjects[0].id }).find(q => q.id === q1.id).inFaq);
+});
+
+t('booking race: save is flushed before the lock is released; loser gets fresh slots', () => {
+  const day = g.api('bookingSlots', s1.token).days.find(x => x.slots.every(s => s.open));
+  g.events.length = 0;
+  const ok = g.api('bookingBook', s1.token, { date: day.date, hour: 19 });
+  assert(ok.ok === true && ok.days.find(x => x.date === day.date).slots.find(s => s.hour === 19).mine, 'winner sees own booking');
+  const ev = g.events.join(',');
+  assert(/lock.*flush.*unlock$/.test(ev) && ev.lastIndexOf('flush') < ev.lastIndexOf('unlock'), ev);
+  // 같은 시간을 '1분 전 화면'을 보고 누른 학생: 거절 + 최신 시간표(마감 상태)
+  const lose = g.api('bookingBook', s2.token, { date: day.date, hour: 19 });
+  assert.strictEqual(lose.ok, false);
+  assert(/먼저 신청/.test(lose.message));
+  const sl = lose.days.find(x => x.date === day.date).slots.find(s => s.hour === 19);
+  assert(sl.count === 1 && !sl.mine, 'loser sees the slot as taken');
+  assert.strictEqual(g.ss.getSheetByName('Zoom Clinic 예약').data.filter(r => r[1] === day.date && r[2] === '19').length, 1, 'only one row saved');
+  const c = g.api('bookingCancel', s1.token, { id: sl.mine || ok.days.find(x => x.date === day.date).slots.find(s => s.hour === 19).mine });
+  assert(c.ok && !c.days.find(x => x.date === day.date).slots.find(s => s.hour === 19).count);
+  assert.strictEqual(g.api('bookingCancel', s1.token, { id: 'gone' }).ok, false);
 });
 
 t('notices: per-class + all-class, pinned first, admin only', () => {
@@ -274,7 +295,7 @@ t('clinic slots are shared across classes; teacher sees class + phone', () => {
   const day = g.api('bookingSlots', s2.token).days.find(x => x.slots.every(s => s.open));
   const s5 = g.api('signup', null, { nickname: '심화5', name: '정심화', phone: '01077778888', password: '1234', classIds: [CLS[1].id] });
   g.api('bookingBook', s5.token, { date: day.date, hour: 23 });
-  throws(() => g.api('bookingBook', s2.token, { date: day.date, hour: 23 }), /먼저 신청/);
+  rejects(() => g.api('bookingBook', s2.token, { date: day.date, hour: 23 }), /먼저 신청/);
   const other = g.api('bookingSlots', s2.token).days.find(x => x.date === day.date).slots.find(x => x.hour === 23);
   assert(other.count === 1 && !other.mine && !other.people);
   const adm = g.api('bookingSlots', admin).days.find(x => x.date === day.date).slots.find(x => x.hour === 23).people[0];
